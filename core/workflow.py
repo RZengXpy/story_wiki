@@ -37,10 +37,11 @@ class WorkflowResult:
         if not self.success:
             return f"[失败] {self.error_message}"
         g = self.graph
+        scripts_count = len(g.scripts) if g.scripts else 0
         return (
             f"[成功] 章节={len(self.chapters)} | 角色={len(g.characters)} "
             f"| 场景={len(g.scenes)} | 事件={len(g.events)} "
-            f"| 关系={len(g.relations)} | 警告={len(g.warnings)}"
+            f"| 关系={len(g.relations)} | 剧本场景={scripts_count} | 警告={len(g.warnings)}"
         )
 
 
@@ -199,3 +200,57 @@ class StoryForgeWorkflow:
 
         except Exception as e:
             return WorkflowResult(success=False, error_message=str(e))
+
+    def run_with_scripts(
+        self,
+        novel_text: str,
+        title: str = "",
+        author: str = "",
+    ) -> WorkflowResult:
+        """Full pipeline: SKL building + screenplay generation."""
+        result = self.run(novel_text, title, author)
+        if not result.success:
+            return result
+
+        # ── MVP 6: SKL → Screenplay ───────────────────────────────────────────
+        script_agent = ScriptAgent(self.llm)
+
+        # Build SKL context for scene-level generation
+        skl_context = {
+            "characters": [
+                {"name": c.name, "description": c.description, "traits": c.traits, "role": c.role}
+                for c in result.global_skl.characters
+            ],
+            "events": result.global_skl.events,
+            "relations": [
+                {"from_char": r.from_char, "to_char": r.to_char,
+                 "relation_type": r.relation_type, "description": r.description}
+                for r in result.global_skl.relations
+            ],
+            "outline": result.global_skl.outline,
+        }
+
+        # Convert SceneNode → dict for write_all_scenes
+        scene_dicts = [
+            {
+                "id": s.id,
+                "title": s.title,
+                "location": s.location,
+                "time": s.time,
+                "characters_present": s.characters_present,
+                "summary": s.summary,
+            }
+            for s in result.graph.scenes
+        ]
+
+        try:
+            scripts = script_agent.write_all_scenes(scene_dicts, skl_context)
+            result.graph.scripts = scripts
+            result.merger_report["scripts_generated"] = len(scripts)
+            result.merger_report["screenplay_items"] = sum(
+                len(s.content) for s in scripts.values()
+            )
+        except Exception:
+            result.merger_report["scripts_generated"] = 0
+
+        return result

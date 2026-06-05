@@ -69,3 +69,24 @@ Identify:
 - key_plot_points: the 3-5 most important plot points in order
 
 Return a JSON object with an "outline" object."""
+
+SCENE_SCREENPLAY_PROMPT = """Generate a screenplay for a single scene based on the following context.
+
+Requirements:
+- Use standard screenplay format (capitalize character names, parentheticals for action in dialogue)
+- Write vivid, visual action lines (what the camera sees, not internal thoughts)
+- Capture each character's unique voice in their dialogue
+- Keep action lines concise (1-3 lines each)
+- Dialogue should reflect character traits and relationships
+- Output a JSON object with a "script" array; each entry has:
+  - type: "action" or "dialogue"
+  - text: the action description or dialogue line
+  - character: (for dialogue only) the speaker's name
+
+Context to consider:
+- Scene location and time of day
+- Characters present and their backgrounds
+- Related events that set up this scene
+- Character relationships relevant to this scene
+
+Return a JSON object with a "script" array."""

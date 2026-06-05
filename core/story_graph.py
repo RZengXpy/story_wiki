@@ -130,6 +130,7 @@ class StoryGraph:
             "relations": self.relations,
             "events": self.events,
             "scenes": self.scenes,
+            "scripts": self.scripts,
             "warnings": self.warnings,
         })
         return yaml.dump(data, allow_unicode=True, sort_keys=False, default_flow_style=False)

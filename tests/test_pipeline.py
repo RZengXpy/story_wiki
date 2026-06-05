@@ -50,7 +50,8 @@ def test_end_to_end():
 
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY not set in .env")
+        import pytest
+        pytest.skip("OPENAI_API_KEY not set")
 
     novel_path = Path("g:/qiniu2/story_wiki/text.md")
     results_dir = Path("g:/qiniu2/story_wiki/tests/results")
