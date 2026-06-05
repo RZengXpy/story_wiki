@@ -3,11 +3,19 @@ from typing import Optional
 
 
 @dataclass
+class SourceTrace:
+    chapter_id: str
+    chapter_title: str
+    char_range: tuple[int, int] = (0, 0)
+
+
+@dataclass
 class Character:
     name: str
     description: str
     traits: list[str] = field(default_factory=list)
     role: str = "supporting"  # "protagonist" | "antagonist" | "supporting"
+    source: Optional[SourceTrace] = None
 
 
 @dataclass
@@ -19,6 +27,7 @@ class Scene:
     characters: list[str] = field(default_factory=list)
     dialogue: list[dict] = field(default_factory=list)
     notes: str = ""
+    source: Optional[SourceTrace] = None
 
     def add_dialogue(self, speaker: str, text: str):
         self.dialogue.append({"speaker": speaker, "text": text})
