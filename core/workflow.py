@@ -14,6 +14,12 @@ from core.story_graph import (
     CharacterRole,
     EventType,
 )
+from core.knowledge_merger import (
+    LocalKnowledge,
+    KnowledgeMerger,
+    merge_chapters_to_skl,
+)
+from core.consistency_checker import ConsistencyChecker
 from agent import CharacterAgent, SceneAgent, ScriptAgent, EventAgent
 
 
@@ -24,6 +30,8 @@ class WorkflowResult:
     error_message: str = ""
     step_results: dict = field(default_factory=dict)
     chapters: list = field(default_factory=list)
+    global_skl: Optional[object] = field(default=None)  # GlobalStoryKnowledge
+    merger_report: dict = field(default_factory=dict)
 
     def summary(self) -> str:
         if not self.success:
@@ -55,16 +63,34 @@ class StoryForgeWorkflow:
             all_scenes = self.scene_agent.parse_from_chapters(chapters, self.llm)
             all_events = self.event_agent.extract_events_from_chapters(chapters, self.llm)
 
-            # Build StoryGraph
+            # ── MVP 4: Local → Global Knowledge Merge ──────────────────────────
+            gsk = merge_chapters_to_skl(
+                title=title,
+                author=author,
+                chapters=chapters,
+                all_characters=all_characters,
+                all_scenes=all_scenes,
+            )
+            merger_report = {
+                "total_chapters": gsk.total_chapters,
+                "unique_characters": len(gsk.characters),
+                "unique_scenes": len(gsk.scenes),
+                "duplicates_removed": gsk.duplicates_removed,
+                "character_first_appearance": gsk.character_first_appearance,
+            }
+
+            # ── Build StoryGraph (deduplicated via SKL) ─────────────────────
             graph = StoryGraph(metadata={
                 "title": title,
                 "author": author,
                 "genre": "thriller",
                 "created_at": datetime.now().isoformat(),
                 "adapted_by": "StoryForge",
+                **merger_report,
             })
 
-            for c in all_characters:
+            # Build StoryGraph using deduplicated data from Global SKL
+            for c in gsk.characters:
                 role_map = {
                     "protagonist": CharacterRole.PROTAGONIST,
                     "antagonist": CharacterRole.ANTAGONIST,
@@ -74,10 +100,10 @@ class StoryForgeWorkflow:
                     name=c.name,
                     role=role_map.get(c.role, CharacterRole.SUPPORTING),
                     description=c.description,
-                    first_appearance=c.source.chapter_title if c.source else "",
+                    first_appearance=gsk.character_first_appearance.get(c.name, ""),
                 ))
 
-            for s in all_scenes:
+            for s in gsk.scenes:
                 graph.scenes.append(SceneNode(
                     id=s.title,
                     title=s.title,
@@ -108,8 +134,13 @@ class StoryForgeWorkflow:
                     consequence=e.consequence,
                 ))
 
+            # ── MVP 4: Enhanced Consistency Check ─────────────────────────────
             if self.run_consistency_check:
-                graph.warnings = self._consistency_check(graph, chapters)
+                checker = ConsistencyChecker(graph)
+                report = checker.check_all()
+                graph.warnings = report.warnings
+                merger_report["consistency_passed"] = report.passed
+                merger_report["consistency_info"] = report.info
 
             result = WorkflowResult(success=True, graph=graph, chapters=chapters)
             result.step_results = {
@@ -117,39 +148,10 @@ class StoryForgeWorkflow:
                 "scenes": all_scenes,
                 "events": all_events,
             }
+            result.global_skl = gsk
+            result.merger_report = merger_report
             return result
 
         except Exception as e:
             return WorkflowResult(success=False, error_message=str(e))
 
-    def _consistency_check(self, graph: StoryGraph, chapters: list) -> list:
-        from core.story_graph import WarningNode, WarningCode, WarningSeverity
-        warnings = []
-
-        char_names = {c.name for c in graph.characters}
-        for scene in graph.scenes:
-            for ch in scene.characters_present:
-                if ch and ch not in char_names:
-                    warnings.append(WarningNode(
-                        code=WarningCode.CHARACTER_DISCREPANCY,
-                        message=f"场景「{scene.title}」中出现未识别角色：{ch}",
-                        severity=WarningSeverity.WARNING,
-                        scene_ids=[scene.id],
-                        characters_involved=[ch],
-                    ))
-
-        # Cross-chapter consistency: detect events spanning multiple chapters
-        seen_events = set()
-        for evt in graph.events:
-            key = (evt.title, evt.location)
-            if key in seen_events:
-                warnings.append(WarningNode(
-                    code=WarningCode.EVENT_CONTRADICTION,
-                    message=f"事件「{evt.title}」可能在多个场景中重复出现",
-                    severity=WarningSeverity.INFO,
-                    scene_ids=[s.id for s in graph.scenes if s.location == evt.location],
-                    characters_involved=evt.participants,
-                ))
-            seen_events.add(key)
-
-        return warnings

@@ -1,0 +1,32 @@
+feat(mvp4): local-to-global knowledge merger + enhanced consistency checker
+
+MVP 4: Implements the "Local -> Global" principle — merge per-chapter knowledge into a single deduplicated Global Story Knowledge Layer (SKL).
+
+New files:
+- core/knowledge_merger.py: KnowledgeMerger, LocalKnowledge, GlobalStoryKnowledge
+  - merge_characters(): deduplicate by name, merge traits
+  - merge_scenes(): deduplicate by (title, location)
+  - character_first_appearance tracking per chapter
+- core/consistency_checker.py: ConsistencyChecker
+  - _check_characters(): duplicate character detection
+  - _check_scene_character_consistency(): scene chars exist in character list
+  - _check_event_characters(): event participants exist in character list
+  - _check_timeline(): detect time marker anomalies per location
+
+Updated:
+- core/workflow.py: integrate KnowledgeMerger and ConsistencyChecker into pipeline
+  - StoryGraph built from deduplicated Global SKL
+  - WorkflowResult now includes global_skl and merger_report
+- core/story_graph.py: added TIMELINE_CONFLICT to WarningCode enum
+
+Tests:
+- tests/test_knowledge_merger.py: 6 unit tests (no API key needed)
+- tests/test_workflow_mvp4.py: end-to-end on text.md (雾港档案)
+
+Results on text.md:
+- 10 raw characters -> 6 unique (4 duplicates removed via Global SKL)
+- Character first appearance tracking: all 6 characters tagged
+- Enhanced consistency checker: 6 warnings including:
+  - CHARACTER_DISCREPANCY (unknown characters in scene dialogue)
+  - EVENT_CONTRADICTION (events referencing unknown characters)
+  - TIMELINE_CONFLICT (location with varying time markers)
