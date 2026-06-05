@@ -2,6 +2,7 @@ from core.llm_client import LLMClient
 from agent.character_agent import CharacterAgent
 from agent.scene_agent import SceneAgent
 from agent.script_agent import ScriptAgent
+from agent.event_agent import EventAgent
 from schema.models import Script
 
 
@@ -10,6 +11,7 @@ class StoryPipeline:
         self.char_agent = CharacterAgent(llm_client)
         self.scene_agent = SceneAgent(llm_client)
         self.script_agent = ScriptAgent(llm_client)
+        self.event_agent = EventAgent(llm_client)
 
     def run(self, novel_text: str, genre: str = "general") -> dict:
         characters = self.char_agent.extract_characters(novel_text)
