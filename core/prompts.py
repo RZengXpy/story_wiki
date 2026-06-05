@@ -44,3 +44,28 @@ For each act, provide:
 - key_scenes: list of 3-5 key scenes in the act
 
 Return a JSON object with an "acts" array."""
+
+RELATION_EXTRACTION_PROMPT = """Extract all character relationships from the following story excerpt.
+
+For each relationship, provide:
+- from_char: the name of the first character
+- to_char: the name of the second character
+- relation_type: one of family, friend, enemy, romantic, professional, stranger
+- description: 1-2 sentences describing how this relationship manifests in the story
+
+Return a JSON object with a "relations" array.
+
+Only extract relationships that are explicitly described or clearly implied by the text.
+Do not invent relationships that are not supported by the text."""
+
+OUTLINE_GENERATION_PROMPT = """Analyze the following story and generate a structured story outline.
+
+Identify:
+- genre: the story's genre
+- theme: the central theme or message
+- main_conflict: the primary conflict driving the story
+- arc_summary: 3-5 sentence summary of the protagonist's character arc
+- act_summaries: for each act (1-3), provide a 1-2 sentence summary of what happens
+- key_plot_points: the 3-5 most important plot points in order
+
+Return a JSON object with an "outline" object."""

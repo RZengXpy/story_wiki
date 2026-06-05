@@ -7,7 +7,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Optional
 
-from schema.models import Character, Scene, SourceTrace
+from schema.models import Character, Scene, Relation, SourceTrace
 
 
 @dataclass
@@ -17,6 +17,37 @@ class LocalKnowledge:
     chapter_title: str
     characters: list[Character] = field(default_factory=list)
     scenes: list[Scene] = field(default_factory=list)
+    relations: list[Relation] = field(default_factory=list)
+    events: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class LocationInfo:
+    """Aggregated location information."""
+    name: str
+    location_type: str  # indoor | outdoor | mixed
+    frequency: int = 1
+    scenes: list[str] = field(default_factory=list)
+
+
+@dataclass
+class TimelineEntry:
+    """A single entry in the story timeline."""
+    time_marker: str
+    location: str
+    event_title: str
+    event_type: str
+    participants: list[str] = field(default_factory=list)
+    chapter_title: str = ""
+
+
+@dataclass
+class CharacterArcEntry:
+    """A single event in a character's arc."""
+    event_title: str
+    event_type: str
+    description: str
+    chapter_title: str
 
 
 @dataclass
@@ -34,12 +65,32 @@ class GlobalStoryKnowledge:
     # Character name → first chapter where they appeared
     character_first_appearance: dict[str, str] = field(default_factory=dict)
 
+    # Deduplicated relations
+    relations: list[Relation] = field(default_factory=list)
+
+    # Deduplicated events (deduplicated by title)
+    events: list[dict] = field(default_factory=list)
+
+    # Aggregated location information
+    locations: list[LocationInfo] = field(default_factory=list)
+
+    # Story timeline sorted by time marker
+    timeline: list[TimelineEntry] = field(default_factory=list)
+
+    # Story outline
+    outline: dict = field(default_factory=dict)
+
+    # Character → list of events they participated in (character arc)
+    character_arcs: dict[str, list[CharacterArcEntry]] = field(default_factory=dict)
+
     # All source chapters for traceability
     source_chapters: list[dict] = field(default_factory=list)
 
     # Merge metadata
     total_chapters: int = 0
     duplicates_removed: int = 0
+
+    # ── Character helpers ────────────────────────────────────────────────
 
     def get_character(self, name: str) -> Optional[Character]:
         for c in self.characters:
@@ -55,11 +106,9 @@ class GlobalStoryKnowledge:
             if existing is None:
                 self.characters.append(c)
             else:
-                # Merge traits
                 for t in c.traits:
                     if t not in existing.traits:
                         existing.traits.append(t)
-                # Merge description (prefer longer one)
                 if len(c.description) > len(existing.description):
                     existing.description = c.description
                 removed += 1
@@ -79,6 +128,113 @@ class GlobalStoryKnowledge:
                 removed += 1
         return removed
 
+    # ── Relation helpers ─────────────────────────────────────────────────
+
+    def merge_relations(self, incoming: list[Relation]) -> int:
+        """Merge relations, deduplicating by (from_char, to_char, relation_type)."""
+        removed = 0
+        for r in incoming:
+            seen = any(
+                existing.from_char == r.from_char
+                and existing.to_char == r.to_char
+                and existing.relation_type == r.relation_type
+                for existing in self.relations
+            )
+            if not seen:
+                self.relations.append(r)
+            else:
+                removed += 1
+        return removed
+
+    # ── Event helpers ────────────────────────────────────────────────────
+
+    def merge_events(self, incoming: list) -> int:
+        """Merge events, deduplicating by title. Returns count of duplicates removed."""
+        removed = 0
+        for e in incoming:
+            title = getattr(e, "title", "") if hasattr(e, "__dataclass_fields__") else e.get("title", "")
+            if not any(
+                (getattr(existing, "title", "") if hasattr(existing, "__dataclass_fields__") else existing.get("title", "")) == title
+                for existing in self.events
+            ):
+                self.events.append(e if isinstance(e, dict) else e.__dict__)
+            else:
+                removed += 1
+        return removed
+
+    # ── Location analysis ────────────────────────────────────────────────
+
+    def build_locations(self) -> None:
+        """Aggregate scene locations into LocationInfo entries."""
+        location_map: dict[str, LocationInfo] = {}
+        for s in self.scenes:
+            loc = s.location or "未知地点"
+            if loc not in location_map:
+                location_map[loc] = LocationInfo(name=loc, location_type="mixed", frequency=0, scenes=[])
+            location_map[loc].frequency += 1
+            location_map[loc].scenes.append(s.title)
+            indoor_keywords = ["室", "房", "厅", "内", "间", "楼", "家", "屋", "馆", "吧", "店", "舱", "车", "办公室", "会议室", "教室", "医院"]
+            outdoor_keywords = ["外", "街", "路", "城", "港", "山", "海", "河", "湖", "岛", "镇", "村", "公园", "森林", "沙漠"]
+            if any(kw in loc for kw in indoor_keywords):
+                location_map[loc].location_type = "indoor"
+            elif any(kw in loc for kw in outdoor_keywords):
+                location_map[loc].location_type = "outdoor"
+            else:
+                location_map[loc].location_type = "mixed"
+        self.locations = sorted(location_map.values(), key=lambda x: x.frequency, reverse=True)
+
+    # ── Timeline building ────────────────────────────────────────────────
+
+    def build_timeline(self, chapter_titles: dict[str, str]) -> None:
+        """Build sorted timeline from events using time_marker."""
+        time_order = {
+            "黎明": 0, "凌晨": 0, "清晨": 1, "早晨": 1, "早上": 1, "上午": 2,
+            "中午": 3, "午间": 3, "午后": 3,
+            "下午": 4, "傍晚": 5, "黄昏": 5, "傍晚": 5,
+            "晚上": 6, "夜里": 7, "深夜": 8, "午夜": 8, "凌晨": 9,
+        }
+        self.timeline = []
+        for e in self.events:
+            e_dict = e if isinstance(e, dict) else e.__dict__
+            marker = e_dict.get("time_marker", "")
+            order = time_order.get(marker, 50)
+            chapter_title = chapter_titles.get(
+                e_dict.get("source", {}).get("chapter_id", "") if isinstance(e_dict.get("source"), dict) else "", ""
+            )
+            self.timeline.append(TimelineEntry(
+                time_marker=marker or "未标注",
+                location=e_dict.get("location", ""),
+                event_title=e_dict.get("title", ""),
+                event_type=e_dict.get("event_type", ""),
+                participants=e_dict.get("participants", []),
+                chapter_title=chapter_title,
+            ))
+        self.timeline.sort(key=lambda x: (time_order.get(x.time_marker, 50), x.event_title))
+
+    # ── Character arc building ───────────────────────────────────────────
+
+    def build_character_arcs(self) -> None:
+        """Build per-character event arcs."""
+        self.character_arcs = defaultdict(list)
+        chapter_map = {}
+        for e in self.events:
+            e_dict = e if isinstance(e, dict) else e.__dict__
+            cid = e_dict.get("source", {}).get("chapter_id", "") if isinstance(e_dict.get("source"), dict) else ""
+            chapter_map[cid] = e_dict.get("source", {}).get("chapter_title", "") if isinstance(e_dict.get("source"), dict) else ""
+        for e in self.events:
+            e_dict = e if isinstance(e, dict) else e.__dict__
+            cid = e_dict.get("source", {}).get("chapter_id", "") if isinstance(e_dict.get("source"), dict) else ""
+            chapter_title = chapter_map.get(cid, "")
+            for participant in e_dict.get("participants", []):
+                self.character_arcs[participant].append(CharacterArcEntry(
+                    event_title=e_dict.get("title", ""),
+                    event_type=e_dict.get("event_type", ""),
+                    description=e_dict.get("description", ""),
+                    chapter_title=chapter_title,
+                ))
+
+    # ── Serialization ────────────────────────────────────────────────────
+
     def to_dict(self) -> dict:
         def strip_source(obj):
             if hasattr(obj, "__dataclass_fields__"):
@@ -92,19 +248,20 @@ class GlobalStoryKnowledge:
                     else:
                         result[name] = val
                 return result
+            elif isinstance(obj, dict):
+                return {k: strip_source(v) for k, v in obj.items()}
             return obj
 
-        result = {
+        data = strip_source(self)
+        return {
             "title": self.title,
             "author": self.author,
             "total_chapters": self.total_chapters,
             "duplicates_removed": self.duplicates_removed,
             "character_first_appearance": self.character_first_appearance,
             "source_chapters": self.source_chapters,
+            **data,
         }
-        data = strip_source(self)
-        result.update(data)
-        return result
 
 
 class KnowledgeMerger:
@@ -122,8 +279,10 @@ class KnowledgeMerger:
 
         chars_removed = self.gsk.merge_characters(local.characters)
         scenes_removed = self.gsk.merge_scenes(local.scenes)
+        rels_removed = self.gsk.merge_relations(local.relations)
+        events_removed = self.gsk.merge_events(local.events)
 
-        self.gsk.duplicates_removed += chars_removed + scenes_removed
+        self.gsk.duplicates_removed += chars_removed + scenes_removed + rels_removed + events_removed
 
         # Track first appearance
         for c in local.characters:
@@ -137,10 +296,15 @@ class KnowledgeMerger:
         self.gsk.total_chapters = len(self.gsk.source_chapters)
         return self.gsk
 
-    def merge_all(self, locals: list[LocalKnowledge]) -> GlobalStoryKnowledge:
-        """Merge multiple chapters' local knowledge in order."""
-        for local in locals:
+    def merge_all(self, locals_list: list[LocalKnowledge]) -> GlobalStoryKnowledge:
+        """Merge multiple chapters' local knowledge in order, then build derived fields."""
+        for local in locals_list:
             self.merge_local(local)
+        # Build derived fields after all chapters merged
+        self.gsk.build_locations()
+        chapter_titles = {ch["chapter_id"]: ch["chapter_title"] for ch in self.gsk.source_chapters}
+        self.gsk.build_timeline(chapter_titles)
+        self.gsk.build_character_arcs()
         return self.gsk
 
     def get_global(self) -> GlobalStoryKnowledge:
@@ -153,12 +317,17 @@ def merge_chapters_to_skl(
     chapters: list,
     all_characters: list[Character],
     all_scenes: list[Scene],
+    all_relations: list[Relation],
+    all_events: list,
+    outline: dict,
 ) -> GlobalStoryKnowledge:
-    """Convenience: one-shot merge from chapter-based extraction results."""
+    """One-shot merge from chapter-based extraction results."""
     from core.chapter_parser import Chapter
 
     chapter_map: dict[str, list[Character]] = defaultdict(list)
     chapter_scenes: dict[str, list[Scene]] = defaultdict(list)
+    chapter_relations: dict[str, list[Relation]] = defaultdict(list)
+    chapter_events: dict[str, list[dict]] = defaultdict(list)
 
     for c in all_characters:
         if c.source:
@@ -171,6 +340,18 @@ def merge_chapters_to_skl(
             chapter_scenes[s.source.chapter_id].append(s)
         else:
             chapter_scenes["unknown"].append(s)
+
+    for r in all_relations:
+        if r.source:
+            chapter_relations[r.source.chapter_id].append(r)
+        else:
+            chapter_relations["unknown"].append(r)
+
+    for e in all_events:
+        src = e.source if isinstance(e.source, dict) else {}
+        cid = src.get("chapter_id", "unknown") if isinstance(src, dict) else "unknown"
+        e_dict = e if isinstance(e, dict) else e.__dict__
+        chapter_events[cid].append(e_dict)
 
     all_chapter_ids = {getattr(ch, "id", f"ch_{i+1:03d}"): getattr(ch, "title", "未知")
                        for i, ch in enumerate(chapters)}
@@ -188,17 +369,20 @@ def merge_chapters_to_skl(
             chapter_title=ctitle,
             characters=chapter_map.get(cid, []),
             scenes=chapter_scenes.get(cid, []),
+            relations=chapter_relations.get(cid, []),
+            events=chapter_events.get(cid, []),
         ))
 
-    # Handle characters/scenes without source (fallback to chapter 1)
-    for cid, chars in chapter_map.items():
-        if cid == "unknown":
-            for c in chars:
-                locals_list[0].characters.append(c) if locals_list else None
-    for cid, scenes in chapter_scenes.items():
-        if cid == "unknown":
-            for s in scenes:
-                if locals_list:
-                    locals_list[0].scenes.append(s)
+    # Handle items without source (fallback to chapter 1)
+    if chapter_map.get("unknown") and locals_list:
+        locals_list[0].characters.extend(chapter_map["unknown"])
+    if chapter_scenes.get("unknown") and locals_list:
+        locals_list[0].scenes.extend(chapter_scenes["unknown"])
+    if chapter_relations.get("unknown") and locals_list:
+        locals_list[0].relations.extend(chapter_relations["unknown"])
+    if chapter_events.get("unknown") and locals_list:
+        locals_list[0].events.extend(chapter_events["unknown"])
 
-    return merger.merge_all(locals_list)
+    result = merger.merge_all(locals_list)
+    result.outline = outline
+    return result
