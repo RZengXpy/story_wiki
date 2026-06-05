@@ -139,6 +139,105 @@ Warnings (6):
 
 ---
 
+## MVP 5：补全 SKL（Relation / Event / Timeline / Location / Outline）
+
+### 目标
+
+补全 `GlobalStoryKnowledge` 的知识结构，从"人物+场景"扩展为完整的 `story_knowledge`。
+
+### SKL 目标结构
+
+```yaml
+story_knowledge:
+  title: "..."
+  author: "..."
+
+  # 已有
+  characters: [...]      # 角色，去重后
+  scenes: [...]          # 场景，去重后
+  character_first_appearance: {...}
+
+  # 新增
+  relations: [...]       # 角色关系（RelationAgent 提取）
+  events: [...]          # 全局事件列表（EventAgent 提取 + 去重合并）
+  locations: [...]       # 地点分析（出现频次、类型）
+  timeline: [...]        # 时间线（事件按时间排序）
+  outline: [...]        # 故事大纲（OutlineAgent 生成）
+  character_arcs: {...} # 角色弧光（按角色分组的关键事件）
+```
+
+### 实现任务
+
+- [ ] **RelationAgent** — 从小说文本/章节中提取角色关系（血缘/友情/敌对/恋爱等），接入 `merge_chapters_to_skl()`
+- [ ] **SKL 扩展** — `GlobalStoryKnowledge` 新增 `relations`/`events`/`locations`/`timeline`/`outline`/`character_arcs` 字段
+- [ ] **Event Merger** — 将逐章提取的 Event 合并到 SKL，支持按 event_type / participants 去重
+- [ ] **Location 分析** — 汇总所有场景 location，统计频次，提取 location 类型
+- [ ] **Timeline 构建** — 基于 time_of_day / time_marker 字段，按事件时间排序，构建全局时间线
+- [ ] **OutlineAgent** — 分析故事主线，生成三幕/五幕结构大纲
+- [ ] **Character Arc** — 按角色聚合其参与的事件，构建角色弧光
+- [ ] **测试** — `test_skl_completeness.py` 验证所有新字段
+
+---
+
+## MVP 6：接入 ScriptAgent，SKL → Screenplay
+
+### 目标
+
+将 `ScriptAgent` 接入 `StoryForgeWorkflow`，实现题目核心要求：小说转剧本。
+
+### 实现任务
+
+- [ ] **ScriptAgent 重构** — 支持以 `StoryGraph` / `GlobalStoryKnowledge` 为输入，而非原始小说文本
+- [ ] **Structure Analysis → Outline** — `analyze_structure()` 输出与 SKL.outline 对齐
+- [ ] **Scene-level Screenplay** — 逐场景生成剧本内容，写入 `StoryGraph.scripts[scene_id]`
+- [ ] **SKL 上下文注入** — 生成场景时，将该场景关联的 CharacterNode / EventNode 作为上下文传入
+- [ ] **Workflow 集成** — `StoryForgeWorkflow.run()` 调用 `ScriptAgent`，返回完整 YAML（含 scripts 节点）
+- [ ] **测试** — `test_screenplay_generation.py` 验证 SKL → YAML 剧本完整链路
+
+### 输出格式
+
+```yaml
+story_graph:
+  version: "1.0"
+  metadata: {...}
+  characters: [...]
+  relations: [...]
+  events: [...]
+  scenes: [...]
+  scripts:           # MVP 6 新增
+    scene_001:       # scene_id → 剧本内容
+      type: "script"
+      content:
+        - type: "action"
+          text: "林远推开公寓的门..."
+        - type: "dialogue"
+          character: "林远"
+          text: "我回来了。"
+  warnings: [...]
+```
+
+---
+
+## MVP 7：Retrieval，Relevant Knowledge → Scene Generation
+
+### 目标
+
+实现"检索增强生成"（RAG），作为作品创新点。
+
+### 实现任务
+
+- [ ] **Knowledge Retriever** — 给定目标 scene_id，从 SKL 检索相关知识（同场景角色背景、相关事件、同一角色其他出场、时间线上下文）
+- [ ] **Context Injection** — 将检索结果注入 `ScriptAgent` prompt，提升场景生成质量
+- [ ] **Scene Graph Construction** — 构建 scene 间的关系图（时序/因果/空间），支撑跨场景检索
+- [ ] **Retrieval Evaluation** — 评估检索相关性（人工评测 + 自动指标）
+- [ ] **测试** — `test_retrieval.py` 验证检索准确性和场景生成提升
+
+### 创新点说明
+
+当前剧本生成直接传入整篇 SKL，上下文爆炸；MVP 7 实现按需检索，仅注入场景相关知识，实现：更精准的场景描写、角色行为的一致性、事件因果链的连贯性。
+
+---
+
 ## Git 提交记录
 
 | Commit | Branch | 内容 |
