@@ -2,6 +2,15 @@
 
 将小说文本自动转换为结构化、可编辑的 YAML 剧本。基于多 Agent 架构与 Story Graph 知识表示构建。
 
+## 功能特性
+
+- **章节感知提取**：按章节粒度并行提取角色、场景、事件、关系，携带溯源信息
+- **知识合并**：Local → Global 逐章合并，去重后构建 Single Source of Truth
+- **一致性检查**：4 类检查（角色冲突 / 场景不一致 / 事件矛盾 / 时间线冲突）
+- **SKL 补全**：自动构建地点聚合、时间线、角色弧光、故事大纲
+- **剧本生成**：以 SKL 为上下文逐场景生成标准格式剧本（action/dialogue）
+- **YAML 输出**：完整结构化剧本，含 characters / relations / events / scenes / scripts / warnings
+
 ## 快速开始
 
 ### 1. 安装依赖
@@ -14,7 +23,7 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入你的 API Key
+# 编辑 .env，填入 API Key
 OPENAI_API_KEY=sk-xxxx
 BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
@@ -30,31 +39,120 @@ streamlit run ui/app.py
 ### 4. 命令行测试
 
 ```bash
-python tests/test_pipeline.py
+# 单元测试（无需 API key）
+pytest tests/test_chapter_parser.py tests/test_knowledge_merger.py -v
+
+# 集成测试（需要 API key）
+pytest tests/test_workflow_mvp4.py -v
+pytest tests/test_workflow_mvp5.py -v
+pytest tests/test_workflow_mvp6.py -v
 ```
 
 ## 项目结构
 
 ```
 story_wiki/
-├── core/                   # 核心模块
-│   ├── llm_client.py       # LLM 调用封装
-│   ├── prompts.py          # Prompt 模板
-│   ├── story_graph.py      # StoryGraph 数据模型
-│   └── workflow.py        # StoryForgeWorkflow 编排器
-├── agent/                  # 多 Agent 实现
-│   ├── character_agent.py  # 角色提取 Agent
-│   ├── scene_agent.py      # 场景解析 Agent
-│   └── script_agent.py     # 剧本生成 Agent
+├── core/                        # 核心模块
+│   ├── llm_client.py           # LLM 调用封装
+│   ├── prompts.py               # Prompt 模板
+│   ├── story_graph.py           # StoryGraph 数据模型
+│   ├── workflow.py             # StoryForgeWorkflow 编排器
+│   ├── chapter_parser.py       # 章节解析
+│   ├── knowledge_merger.py     # Local → Global 知识合并
+│   └── consistency_checker.py  # 一致性检查
+├── agent/                       # 多 Agent 实现
+│   ├── character_agent.py      # 角色提取 Agent
+│   ├── scene_agent.py          # 场景解析 Agent
+│   ├── event_agent.py          # 事件提取 Agent
+│   ├── relation_agent.py       # 关系提取 Agent
+│   ├── outline_agent.py        # 大纲生成 Agent
+│   └── script_agent.py         # 剧本生成 Agent
 ├── pipeline/
-│   └── orchestrator.py     # StoryPipeline 编排器
+│   └── orchestrator.py          # StoryPipeline 编排器
 ├── schema/
-│   └── models.py           # 基础数据模型
+│   └── models.py               # 基础数据模型
 ├── ui/
-│   └── app.py              # Streamlit Web UI
+│   └── app.py                   # Streamlit Web UI
 └── tests/
-    ├── test_pipeline.py    # 端到端集成测试
-    └── results/            # 测试输出示例
+    ├── test_chapter_parser.py   # 章节解析单元测试
+    ├── test_knowledge_merger.py # 知识合并单元测试
+    ├── test_workflow_mvp4.py   # MVP 4 集成测试
+    ├── test_workflow_mvp5.py   # MVP 5 集成测试
+    └── test_workflow_mvp6.py   # MVP 6 集成测试
+```
+
+## 架构概览
+
+```
+小说文本
+  │
+  ▼
+ChapterParser ──── 章节拆分
+  │
+  ▼
+┌─────────────────────────────────┐
+│  各 Agent 并行按章节提取          │
+│  CharacterAgent / SceneAgent     │
+│  EventAgent / RelationAgent     │
+│  OutlineAgent（全文）           │
+└─────────────────────────────────┘
+  │
+  ▼
+LocalKnowledge ──→ KnowledgeMerger.merge_all()
+  │                        │
+  │                        ▼
+  │               GlobalStoryKnowledge
+  │               （Single Source of Truth）
+  │                        │
+  │             ┌──────────┴──────────┐
+  │             ▼                      ▼
+  │      ConsistencyChecker     派生字段构建
+  │       （4类一致性检查）    locations / timeline /
+  │                            character_arcs / outline
+  │                        │
+  │                        ▼
+  │                  StoryGraph
+  │                        │
+  │            ┌──────────┴──────────┐
+  │            ▼                      ▼
+  │       run()              run_with_scripts()
+  │    （仅 SKL）           （SKL + 剧本）
+  │                                │
+  │                                ▼
+  │                        ScriptAgent.write_scene()
+  │                        （逐场景，SKL 上下文注入）
+  │                                │
+  │                                ▼
+  │                          to_yaml()
+  │                      （含 scripts 字段）
+```
+
+## 输出格式
+
+```yaml
+story_graph:
+  version: "1.0"
+  metadata:
+    title: "雾港档案"
+    author: "StoryForge"
+    genre: "thriller"
+    total_chapters: 3
+    unique_characters: 6
+    unique_scenes: 18
+  characters: [...]
+  relations: [...]
+  events: [...]
+  scenes: [...]
+  scripts:
+    scene_001:
+      id: "scene_001"
+      content:
+        - type: "action"
+          text: "林远推开公寓的门..."
+        - type: "dialogue"
+          character: "林远"
+          text: "我回来了。"
+  warnings: [...]
 ```
 
 ## 依赖
@@ -66,5 +164,9 @@ story_wiki/
 | pyyaml | >= 6.0.1 | YAML 序列化 |
 | pytest | >= 8.0.0 | 单元测试 |
 | pytest-asyncio | >= 0.23.0 | 异步测试支持 |
+
+## 开发记录
+
+详见 `REVIEW_LOG.md`。
 
 ## License
