@@ -10,6 +10,15 @@ class SourceTrace:
 
 
 @dataclass
+class Relation:
+    from_char: str
+    to_char: str
+    relation_type: str  # "family" | "friend" | "enemy" | "romantic" | "professional" | "stranger"
+    description: str = ""
+    source: Optional[SourceTrace] = None
+
+
+@dataclass
 class Character:
     name: str
     description: str
