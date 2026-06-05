@@ -1,0 +1,121 @@
+scenes:
+- title: 雨夜档案室
+  location: 雾港镇图书馆地下档案室
+  time_of_day: 下午
+  description: 秋雨连绵，海风裹着咸湿的雾气穿过街道。老旧路灯在雨中忽明忽暗。图书馆管理员林川正在整理布满灰尘的航海记录档案架。
+  characters:
+  - 林川
+  dialogue: []
+  notes: 开场建立阴郁、神秘的氛围，为后续事件铺垫。
+- title: 陌生来客
+  location: 图书馆大厅
+  time_of_day: 下午四点
+  description: 一位穿深灰色风衣、拄木制手杖的陌生老人推开图书馆大门，询问'北辰号'的航海日志。林川听到这个名字时明显愣住。
+  characters:
+  - 林川
+  - 许远（老人）
+  dialogue: []
+  notes: 老人出场带着悬念，直接引出核心物件。
+- title: 失踪的日志
+  location: 图书馆地下档案室
+  time_of_day: 下午
+  description: 林川带老人到编号N-27的档案柜，但日志已不翼而飞。柜中只剩一张泛黄纸条，上面写着'不要寻找灯塔下面的秘密'。老人脸色骤变，匆匆离开。
+  characters:
+  - 林川
+  - 许远
+  dialogue: []
+  notes: 纸条是第一个重要线索，老人反应暗示更深秘密。
+- title: 纸条上的秘密
+  location: 图书馆内
+  time_of_day: 晚上
+  description: 林川在整理时发现纸条背面有几乎看不见的小字：'10月17日，午夜。' 他凝视着这行字，陷入沉思。
+  characters:
+  - 林川
+  dialogue: []
+  notes: 时间线索出现，制造紧迫感。
+- title: 好友的邀请
+  location: 林川办公室或咖啡馆（未明确，但可假定为日常场所）
+  time_of_day: 第二天下午
+  description: 林川将纸条的事告诉好友陈雨，一位自由记者。陈雨兴奋地表示不能错过，两人决定前往废弃灯塔。
+  characters:
+  - 林川
+  - 陈雨
+  dialogue: []
+  notes: 陈雨的角色设定为行动派，推动剧情。
+- title: 废弃灯塔
+  location: 黑礁海岸废弃灯塔
+  time_of_day: 傍晚六点
+  description: 锈蚀的大门半掩，地板上有新鲜脚印。两人沿螺旋楼梯向下，发现一扇隐藏铁门，推开后进入秘密储藏室。
+  characters:
+  - 林川
+  - 陈雨
+  dialogue: []
+  notes: 场景视觉突出破败与隐秘感。
+- title: 金属箱内的发现
+  location: 灯塔地下室秘密储藏室
+  time_of_day: 傍晚
+  description: 房间中央有一防水金属箱，打开后里面是一本残破航海日志，封面写着《北辰号航海记录》。
+  characters:
+  - 林川
+  - 陈雨
+  dialogue: []
+  notes: 核心物件终于出现，但随即被中断。
+- title: 黑衣男人的突袭
+  location: 灯塔地下室
+  time_of_day: 傍晚
+  description: 脚步声传来，一个戴黑色雨衣的男人出现，冷冷要求交出日志。陈雨偷偷按下录音笔。双方僵持，抢夺中金属箱跌落，滑出一张地图。地图上标记着从未公开的岛屿。黑衣男人看到地图后慌张逃离。
+  characters:
+  - 林川
+  - 陈雨
+  - 黑衣男人
+  dialogue: []
+  notes: 高潮冲突，地图成为新关键线索。
+- title: 出海准备
+  location: 雾港镇码头或渔船
+  time_of_day: 10月17日傍晚至午夜前
+  description: 按照日志记录，林川和陈雨租下渔船，船长老周抱怨天气恶劣。海面浓雾弥漫，船向地图标记位置行进。
+  characters:
+  - 林川
+  - 陈雨
+  - 老周
+  dialogue: []
+  notes: 时间点呼应纸条，迷雾营造危险氛围。
+- title: 迷雾岛登陆
+  location: 神秘岛屿海岸
+  time_of_day: 凌晨一点
+  description: 浓雾中浮现岛屿轮廓，三人登岛后发现岛中央矗立着一座废弃观测站。设备陈旧但尚能运转。
+  characters:
+  - 林川
+  - 陈雨
+  - 老周
+  dialogue: []
+  notes: 孤岛环境增加悬念。
+- title: 加密文件的真相
+  location: 观测站主控室
+  time_of_day: 凌晨
+  description: 林川找到加密文件，内容显示二十年前北辰号船员在海底发现特殊矿石，该矿石可干扰无线电信号。某家公司为独占成果，封锁消息并伪造沉船记录。而第一章的老人正是北辰号大副许远。
+  characters:
+  - 林川
+  - 陈雨
+  dialogue: []
+  notes: 真相揭示，反转了前文的失踪假象。
+- title: 最后的对峙
+  location: 观测站外
+  time_of_day: 黎明前
+  description: 发动机轰鸣，数辆越野车包围建筑，黑衣男人再次出现要求留下文件。危急时刻陈雨打开直播，将所有资料实时上传网络。黑衣男人眼见事情无法掩盖，最终离开。
+  characters:
+  - 林川
+  - 陈雨
+  - 黑衣男人
+  dialogue: []
+  notes: 利用现代技术解决危机，高潮对峙。
+- title: 黎明与和解
+  location: 迷雾岛海岸
+  time_of_day: 天亮时
+  description: 许远登上岛屿，看着重新公开的真相，沉默许久后向林川伸手致谢。海面上浓雾缓缓散去，晨光照亮整片海域。
+  characters:
+  - 林川
+  - 陈雨
+  - 许远
+  dialogue: []
+  notes: 情感收尾，象征真相大白与希望。

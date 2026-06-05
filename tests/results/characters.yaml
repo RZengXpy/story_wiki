@@ -1,0 +1,45 @@
+characters:
+- name: 林川
+  description: 镇图书馆管理员，负责整理地下档案室的航海记录，性格细致、沉稳，富有好奇心。
+  traits:
+  - 细致
+  - 沉稳
+  - 有好奇心
+  - 正直
+  - 敢于行动
+  role: protagonist
+- name: 陈雨
+  description: 自由记者，专门调查各种离奇事件，勇敢且善于利用技术手段，是林川的好友。
+  traits:
+  - 勇敢
+  - 机智
+  - 兴奋于冒险
+  - 善于技术应用
+  - 果断
+  role: protagonist
+- name: 许远
+  description: 神秘老人，曾是北辰号的大副，一直在寻找当年船只失踪的真相。
+  traits:
+  - 神秘
+  - 执着
+  - 坚韧
+  - 沉默寡言
+  - 心怀愧疚
+  role: supporting
+- name: 黑衣男人
+  description: 身份不明的神秘人物，试图抢夺北辰号的航海日志和地图，可能是幕后势力的代表。
+  traits:
+  - 冷酷
+  - 威胁性
+  - 果断
+  - 隐藏身份
+  - 易于慌乱
+  role: antagonist
+- name: 老周
+  description: 渔船船长，被林川和陈雨雇佣前往迷雾岛，对恶劣天气多有抱怨。
+  traits:
+  - 抱怨
+  - 谨慎
+  - 务实
+  - 经验丰富
+  role: supporting

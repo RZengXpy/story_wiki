@@ -1,0 +1,58 @@
+screenplay: "```json\n{\n  \"screenplay\": \"SCENE 1\\n\\nINT. FOG HARBOR LIBRARY\
+  \ - DAY (AFTERNOON)\\n\\nRAIN pours down for days. The sea wind carries salty mist\
+  \ through the narrow streets. Old streetlights flicker in the rain curtain.\\n\\\
+  nLibrary interior. Dusty shelves. LIN CHUAN (30, neat, observant) organizes files\
+  \ at a desk.\\n\\nThe library door opens. An ELDERLY MAN (70s, gray trench coat,\
+  \ wooden cane) enters, dripping water.\\n\\nELDERLY MAN\\nExcuse me... Do you still\
+  \ keep the ship log of the \\\"North Star\\\"?\\n\\nLin Chuan freezes. The North\
+  \ Star—a cargo ship that vanished twenty years ago.\\n\\nLIN CHUAN\\n(voicing curiosity)\\\
+  nIt might be in the basement archive. Follow me.\\n\\nThey descend to the basement.\\\
+  n\\nSCENE 2\\n\\nINT. BASEMENT ARCHIVE - CONTINUOUS\\n\\nRows of metal cabinets.\
+  \ Dusty labels. They search for folder N-27.\\n\\nThe drawer is empty except for\
+  \ a yellowed note.\\n\\nCLOSE ON NOTE:\\n\\\"Don't seek the secret beneath the lighthouse.\\\
+  \"\\n\\nThe elderly man's face pales.\\n\\nELDERLY MAN\\nSomeone already took it...\\\
+  n\\nHe turns and hurries out without another word.\\n\\nSCENE 3\\n\\nINT. LIBRARY\
+  \ - NIGHT\\n\\nLin Chuan sits at his desk. He examines the note under a lamp. On\
+  \ the back, nearly invisible tiny text:\\n\\n\\\"October 17. Midnight.\\\"\\n\\\
+  nHis eyes narrow.\\n\\nSCENE 4\\n\\nINT. CHEN YU'S APARTMENT - DAY (NEXT DAY)\\\
+  n\\nCHEN YU (28, energetic journalist) stares at the note Lin Chuan brought.\\n\\\
+  nCHEN YU\\n\\\"Secret beneath the lighthouse\\\"? This is too good to miss.\\n\\\
+  nShe grabs her jacket.\\n\\nCHEN YU\\nLet's go.\\n\\nSCENE 5\\n\\nEXT. ABANDONED\
+  \ LIGHTHOUSE - EVENING (6:00 PM)\\n\\nBlack Reef Coast. Rusted gate half-open. Rain\
+  \ glistens on stone.\\n\\nLin Chuan and Chen Yu approach. Fresh footprints in the\
+  \ mud.\\n\\nSCENE 6\\n\\nINT. LIGHTHOUSE STAIRCASE - CONTINUOUS\\n\\nThey descend\
+  \ a spiral staircase. Cobwebs broken. Someone passed recently.\\n\\nSCENE 7\\n\\\
+  nINT. UNDERGROUND STORAGE ROOM - CONTINUOUS\\n\\nA hidden iron door at the end.\
+  \ Unlocked.\\n\\nThey push it open.\\n\\nA single metal waterproof box on a pedestal.\
+  \ Inside: a tattered logbook.\\n\\nCLOSE ON COVER: \\\"North Star Voyage Record\\\
+  \"\\n\\nFootsteps echo from the stairway. A MAN in black raincoat appears.\\n\\\
+  nBLACK RAINCOAT\\nHand over the log.\\n\\nChen Yu discreetly presses RECORD on her\
+  \ pocket recorder.\\n\\nTension. Lin Chuan holds the box.\\n\\nBlack Raincoat lunges\
+  \ for it. Struggle. The box falls. A folded map slips out.\\n\\nAN UNKNOWN ISLAND—not\
+  \ on any public chart.\\n\\nBlack Raincoat's eyes widen. He hesitates, then turns\
+  \ and runs up the stairs.\\n\\nLin Chuan picks up the map.\\n\\nLIN CHUAN\\nWhat\
+  \ is this place...\\n\\nSCENE 8\\n\\nEXT. FISHING BOAT - NIGHT (OCTOBER 17, MIDNIGHT)\\\
+  n\\nRough sea. Dense fog. Captain LAO ZHOU (50s, grizzled) steers, grumbling.\\\
+  n\\nLAO ZHOU\\nNever seen fog this thick. Bad luck sea.\\n\\nLin Chuan studies the\
+  \ map and logbook.\\n\\nSCENE 9\\n\\nEXT. MYSTERY ISLAND - NIGHT (AFTER 1:00 AM)\\\
+  n\\nThrough fog, the island looms. They dock a small dinghy.\\n\\nCentral: an abandoned\
+  \ observation station.\\n\\nSCENE 10\\n\\nINT. OBSERVATION STATION - NIGHT\\n\\\
+  nOld equipment still humming. Lin Chuan finds encrypted files on a terminal.\\n\\\
+  nHe decrypts them. Data reveals:\\n\\nTwenty years ago, North Star crew discovered\
+  \ a special ore on the seabed—one that disrupts radio signals.\\n\\nA company covered\
+  \ it up, faked a shipwreck.\\n\\nThe elderly man is XU YUAN, former first mate of\
+  \ North Star, seeking truth.\\n\\nCHEN YU\\nWe need to get this out.\\n\\nJust then—\\\
+  n\\nSCENE 11\\n\\nEXT. OBSERVATION STATION - CONTINUOUS\\n\\nEngine roar. Four off-road\
+  \ vehicles surround the building.\\n\\nBlack Raincoat steps out, followed by two\
+  \ men.\\n\\nBLACK RAINCOAT\\nLeave the files. Now.\\n\\nChen Yu pulls out her phone,\
+  \ activates live-stream.\\n\\nCHEN YU\\nToo late. The world is watching.\\n\\nShe\
+  \ uploads all files. Within minutes, the data goes viral.\\n\\nBlack Raincoat's\
+  \ men look at him uncertainly. He realizes the cover is blown.\\n\\nHe gestures\
+  \ them to retreat. Engines rev. They drive off.\\n\\nSCENE 12\\n\\nEXT. ISLAND SHORE\
+  \ - DAWN\\n\\nFog begins to lift. XU YUAN arrives by boat.\\n\\nHe walks to Lin\
+  \ Chuan and Chen Yu. Silence. Then he extends his hand.\\n\\nXU YUAN\\nThank you.\\\
+  n\\nSunlight breaks through the mist, illuminating the sea.\\n\\nFADE OUT.\"\n}\n\
+  ```"
+metadata:
+  genre: thriller
+  chars: 4174

@@ -46,5 +46,9 @@ MIGRATION.md
 
 # Output
 output/
-*.yaml
+
+# Allow test output (committed to demonstrate pipeline results)
+tests/results/
+
+# Schema yaml should be explicitly allowed
 !schema/screenplay_schema.yaml
