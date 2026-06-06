@@ -5,9 +5,17 @@ Implements the "Local → Global" principle from think.md:
 """
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from schema.models import Character, Scene, Relation, SourceTrace
+
+# Import rich types from agents for GlobalStoryKnowledge field typing
+from agent.location_agent import LocationInfo as _RichLocationInfo
+from agent.timeline_agent import TimelineEntry as _RichTimelineEntry
+
+# Use rich types in GS K field annotations (resolved at type-check time)
+_location_type = _RichLocationInfo
+_timeline_type = _RichTimelineEntry
 
 
 @dataclass
@@ -21,24 +29,9 @@ class LocalKnowledge:
     events: list[dict] = field(default_factory=list)
 
 
-@dataclass
-class LocationInfo:
-    """Aggregated location information."""
-    name: str
-    location_type: str  # indoor | outdoor | mixed
-    frequency: int = 1
-    scenes: list[str] = field(default_factory=list)
-
-
-@dataclass
-class TimelineEntry:
-    """A single entry in the story timeline."""
-    time_marker: str
-    location: str
-    event_title: str
-    event_type: str
-    participants: list[str] = field(default_factory=list)
-    chapter_title: str = ""
+# Re-export for backward compatibility (code importing from knowledge_merger)
+TimelineEntry = _RichTimelineEntry
+LocationInfo = _RichLocationInfo
 
 
 @dataclass
@@ -320,6 +313,8 @@ def merge_chapters_to_skl(
     all_relations: list[Relation],
     all_events: list,
     outline: dict,
+    timeline_agent=None,
+    location_agent=None,
 ) -> GlobalStoryKnowledge:
     """One-shot merge from chapter-based extraction results."""
     from core.chapter_parser import Chapter
@@ -385,4 +380,12 @@ def merge_chapters_to_skl(
 
     result = merger.merge_all(locals_list)
     result.outline = outline
+
+    # ── MVP 2: Rich agents for locations & timeline ──────────────────────────
+    if location_agent is not None:
+        result.locations = location_agent.build_locations(result.scenes)
+    if timeline_agent is not None:
+        chapter_titles = {ch["chapter_id"]: ch["chapter_title"] for ch in result.source_chapters}
+        result.timeline = timeline_agent.build_timeline(result.events, chapter_titles)
+
     return result

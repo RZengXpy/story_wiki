@@ -1,5 +1,6 @@
 """ScriptAgent — converts story knowledge (SKL) into structured screenplay YAML."""
 from typing import Optional
+
 from core.llm_client import LLMClient
 from core.prompts import (
     SYSTEM_PROMPT,
@@ -10,12 +11,75 @@ from core.prompts import (
 from core.story_graph import ScriptNode, ScriptItem
 
 
+def filter_relevant_context(
+    skl: dict,
+    scene_title: str,
+    scene_location: str,
+    scene_time: str,
+    characters_present: list[str],
+) -> dict:
+    """Filter SKL to include only context relevant to a given scene.
+
+    Implements "Retrieval Before Generation" principle (MVP 1):
+    - Characters: only those appearing in this scene
+    - Events: those involving scene characters OR occurring at the same location
+    - Relations: those involving scene characters
+    - Outline: always passed through (global context)
+    """
+    chars = []
+    for c in skl.get("characters", []):
+        if c.get("name", "") in characters_present:
+            chars.append(c)
+
+    char_set = set(characters_present)
+    events = []
+    for e in skl.get("events", []):
+        e_participants = set(e.get("participants", []))
+        e_location = e.get("location", "")
+        if e_participants & char_set:
+            events.append(e)
+        elif scene_location and e_location and _location_overlaps(scene_location, e_location):
+            events.append(e)
+
+    rels = []
+    for r in skl.get("relations", []):
+        fc = r.get("from_char", "")
+        tc = r.get("to_char", "")
+        if fc in char_set or tc in char_set:
+            rels.append(r)
+
+    return {
+        "characters": chars,
+        "events": events,
+        "relations": rels,
+        "outline": skl.get("outline", {}),
+    }
+
+
+def _location_overlaps(loc1: str, loc2: str) -> bool:
+    """Check if two location strings refer to the same place."""
+    if not loc1 or not loc2:
+        return False
+    loc1, loc2 = loc1.strip(), loc2.strip()
+    if loc1 == loc2:
+        return True
+    if loc1 in loc2 or loc2 in loc1:
+        return True
+    for n in range(min(len(loc1), len(loc2)), 2, -1):
+        for i in range(len(loc1) - n + 1):
+            gram = loc1[i:i + n]
+            if gram in loc2:
+                return True
+    return False
+
+
 class ScriptAgent:
-    def __init__(self, llm_client: LLMClient):
+    def __init__(self, llm_client: Optional[LLMClient] = None):
         self.llm = llm_client
 
-    def analyze_structure(self, story_text: str) -> list[dict]:
-        """Analyze story structure, returns list of acts."""
+    def analyze_structure(self, story_text: str) -> list:
+        if self.llm is None:
+            return []
         response = self.llm.generate_json(
             SYSTEM_PROMPT + "\n\n" + STORY_STRUCTURE_PROMPT,
             story_text,
@@ -23,7 +87,8 @@ class ScriptAgent:
         return response.get("acts", [])
 
     def write_screenplay(self, story_text: str, genre: str = "general") -> str:
-        """Write a full screenplay from raw story text (legacy method)."""
+        if self.llm is None:
+            return ""
         return self.llm.generate(
             SYSTEM_PROMPT + "\n\n" + SCRIPT_WRITING_PROMPT,
             f"Genre: {genre}\n\nStory:\n{story_text}",
@@ -39,8 +104,9 @@ class ScriptAgent:
         scene_summary: str,
         skl_context: dict,
     ) -> ScriptNode:
-        """Generate screenplay content for a single scene using SKL context."""
-        # Build character context
+        """Generate screenplay content for a single scene using filtered SKL context."""
+        if self.llm is None:
+            return ScriptNode(id=scene_title, content=[])
         char_lines = []
         for c in skl_context.get("characters", []):
             name = c.get("name", "")
