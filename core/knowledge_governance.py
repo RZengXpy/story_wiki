@@ -111,9 +111,10 @@ class KnowledgeConflict:
 class ConflictResolver:
     """Detects and resolves conflicts between knowledge extracted by different agents."""
 
-    def __init__(self, gsk, audit_trail: AuditTrail):
+    def __init__(self, gsk, audit_trail: AuditTrail, llm=None):
         self.gsk = gsk
         self.audit_trail = audit_trail
+        self.llm = llm
 
     def detect_all(self) -> list[KnowledgeConflict]:
         """Run all conflict detection rules."""
@@ -140,6 +141,60 @@ class ConflictResolver:
         elif strategy == "merge":
             self._apply_merge(conflict)
         # "manual" does nothing — conflict remains in unresolved list
+
+    def resolve_with_llm(self, conflict: KnowledgeConflict) -> str:
+        """Use LLM to resolve a conflict when rules are insufficient.
+
+        This method uses the LLM to analyze the context of a conflict and
+        determine the most appropriate resolution strategy.
+
+        Returns:
+            Resolution strategy: "keep_a" | "keep_b" | "merge" | "manual"
+        """
+        if self.llm is None:
+            return "manual"
+
+        system_prompt = (
+            "You are a story consistency expert. Analyze the following conflict "
+            "between two pieces of extracted knowledge and determine the best resolution. "
+            "Reply with ONLY ONE of these strategies: keep_a, keep_b, merge, manual"
+        )
+        user_prompt = self._build_llm_prompt(conflict)
+        try:
+            response = self.llm.generate(system_prompt, user_prompt, temperature=0.3)
+            strategy = response.strip().lower()
+            if strategy not in ("keep_a", "keep_b", "merge", "manual"):
+                return "manual"
+            return strategy
+        except Exception:
+            return "manual"
+
+    def _build_llm_prompt(self, conflict: KnowledgeConflict) -> str:
+        """Build a detailed prompt describing the conflict for the LLM."""
+        lines = [
+            f"Conflict Type: {conflict.conflict_type}",
+            "",
+            f"Entity A: {self._format_entity(conflict.entity_a)}",
+            f"Entity B: {self._format_entity(conflict.entity_b)}",
+            "",
+            "Story Context:",
+        ]
+        if self.gsk is not None:
+            lines.extend([
+                f"  Characters: {[c.name for c in self.gsk.characters]}",
+                f"  Total scenes: {len(self.gsk.scenes)}",
+                f"  Total events: {len(self.gsk.events)}",
+            ])
+        else:
+            lines.append("  (no story context available)")
+        return "\n".join(lines)
+
+    def _format_entity(self, entity: dict) -> str:
+        """Format a conflict entity for LLM prompt readability."""
+        if not entity:
+            return "(unknown)"
+        parts = [f"{k}={v}" for k, v in entity.items() if v]
+        return ", ".join(parts) if parts else "(empty)"
 
     def auto_resolve(self) -> list[KnowledgeConflict]:
         """Attempt automatic resolution of all detected conflicts.
@@ -822,12 +877,13 @@ class GovernanceReport:
 class KnowledgeGovernor:
     """Main entry point for SKL knowledge governance."""
 
-    def __init__(self, gsk, graph=None):
+    def __init__(self, gsk, graph=None, llm=None):
         self.gsk = gsk
         self.graph = graph
+        self.llm = llm
         self.audit_trail = AuditTrail()
         self.validator = SKLValidator(gsk)
-        self.conflict_resolver = ConflictResolver(gsk, self.audit_trail)
+        self.conflict_resolver = ConflictResolver(gsk, self.audit_trail, llm=llm)
         self.patch_handler = KnowledgePatch(gsk, self.audit_trail)
         self.revision = KnowledgeRevision(gsk, self.audit_trail)
 
@@ -864,7 +920,7 @@ class KnowledgeGovernor:
         return success
 
 
-def govern_skl(gsk, auto_resolve: bool = True, graph=None) -> GovernanceReport:
+def govern_skl(gsk, auto_resolve: bool = True, graph=None, llm=None) -> GovernanceReport:
     """Convenience function: run full governance on a GlobalStoryKnowledge instance."""
-    governor = KnowledgeGovernor(gsk, graph=graph)
+    governor = KnowledgeGovernor(gsk, graph=graph, llm=llm)
     return governor.govern(auto_resolve=auto_resolve)

@@ -585,6 +585,32 @@ def test_governance_report_summary():
     print("  PASS: governance_report_summary")
 
 
+def test_conflict_resolver_llm_graceful_fallback():
+    """resolve_with_llm returns 'manual' when llm is None."""
+    conflict = KnowledgeConflict(
+        conflict_type="relation_event_mismatch",
+        entity_a={"type": "relation", "id": "r1", "from": "A", "to": "B"},
+        entity_b={"type": "event", "id": "e1"},
+    )
+    trail = AuditTrail()
+    resolver = ConflictResolver(None, trail, llm=None)
+    strategy = resolver.resolve_with_llm(conflict)
+    assert strategy == "manual"
+    print("  PASS: conflict_resolver_llm_graceful_fallback")
+
+
+def test_conflict_resolver_llm_format_entity():
+    """_format_entity handles various entity shapes gracefully."""
+    trail = AuditTrail()
+    resolver = ConflictResolver(None, trail)
+    assert resolver._format_entity(None) == "(unknown)"
+    # Empty dict is falsy in Python, so returns "(unknown)"
+    assert resolver._format_entity({}) == "(unknown)"
+    assert "role=protagonist" in resolver._format_entity({"name": "林远", "role": "protagonist"})
+    assert resolver._format_entity({"type": "relation", "from": "A", "to": "B"}) == "type=relation, from=A, to=B"
+    print("  PASS: conflict_resolver_llm_format_entity")
+
+
 def test_governance_workflow_integration_fields():
     """Verify WorkflowResult has the expected governance fields."""
     from core.workflow import WorkflowResult, GovernanceReport
@@ -725,6 +751,9 @@ if __name__ == "__main__":
         # StoryGraph patch propagation
         test_storygraph_apply_character_rename,
         test_governor_with_graph_propagates_rename,
+        # LLM-enhanced conflict resolution
+        test_conflict_resolver_llm_graceful_fallback,
+        test_conflict_resolver_llm_format_entity,
     ]
 
     passed = 0
