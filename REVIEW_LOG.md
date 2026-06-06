@@ -235,12 +235,14 @@ story_graph:
 
 ### 实现任务
 
-- [ ] **ConflictResolver**：检测并仲裁跨 Agent 的知识冲突（如角色身份不一致、关系与事件矛盾）
-- [ ] **SKL Validator**：对 GlobalStoryKnowledge 做完整性/一致性校验（必填字段、类型约束、跨字段约束）
-- [ ] **KnowledgePatch**：接收用户修正，回写到 SKL 并级联更新受影响的下游（SceneGraph / scripts）
-- [ ] **KnowledgeRevision**：基于一致性检查结果，自动修正可推断的错误（如拼写纠错、类型规范化）
-- [ ] **AuditTrail**：记录 SKL 的每次变更，支持回溯和撤销
-- [ ] **测试**：`test_knowledge_governance.py` 验证冲突检测和仲裁逻辑
+- [x] **AuditTrail**：`AuditEntry` / `AuditTrail`，记录所有 SKL 变更，支持回溯和 rollback
+- [x] **ConflictResolver**：检测 4 类冲突（relation_event_mismatch / character_role_conflict / character_identity_merge），支持 keep_a / keep_b / merge / manual 策略 + 自动仲裁
+- [x] **SKL Validator**：`SKLValidator` 对 GlobalStoryKnowledge 做完整性/一致性校验（必填字段、类型约束、孤儿实体、跨字段约束）
+- [x] **KnowledgePatch**：接收用户修正，回写到 SKL 并级联更新受影响的下游（Scene / Event / Relation）
+- [x] **KnowledgeRevision**：`KnowledgeRevision.auto_correct()` 自动规范化 event_type / relation_type / character_role 拼写错误
+- [x] **KnowledgeGovernor**：`govern_skl()` 便捷函数 + `GovernanceReport` 统一入口
+- [x] **Workflow 集成**：`StoryForgeWorkflow.run()` 在 SKL 构建完成后调用 `govern_skl()`
+- [x] **测试**：`tests/test_knowledge_governance.py` 33 个单元测试
 
 ### 知识治理在 pipeline 中的位置
 
@@ -274,6 +276,7 @@ SKL 构建（Local → Global）
 | `5d8159a` | main | feat: 章节感知的多 Agent 小说转剧本 pipeline（MVP 3-5） |
 | `c8b3a39` | main | feat(mvp6): 接入 ScriptAgent，SKL → Screenplay 剧本生成 |
 | `6dc27e1` | main | feat(mvp6): 接入 ScriptAgent，SKL → Screenplay 剧本生成（含 REVIEW_LOG.md 更新） |
+| `3f5d2f7` | feature/mvp1-2 | feat(mvp7): knowledge layer governance — conflict resolution, validation, patching, audit |
 
 PR 链接：
 - MVP 3-5: https://github.com/RZengXpy/story_wiki/pull/3

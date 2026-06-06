@@ -20,6 +20,8 @@ from core.knowledge_merger import (
     merge_chapters_to_skl,
 )
 from core.consistency_checker import ConsistencyChecker
+from core.knowledge_governance import govern_skl, GovernanceReport
+from core.incremental import ChapterCache
 from agent import CharacterAgent, SceneAgent, ScriptAgent, EventAgent, RelationAgent, OutlineAgent
 
 
@@ -32,6 +34,7 @@ class WorkflowResult:
     chapters: list = field(default_factory=list)
     global_skl: Optional[object] = field(default=None)  # GlobalStoryKnowledge
     merger_report: dict = field(default_factory=dict)
+    governance_report: Optional[GovernanceReport] = field(default=None)
 
     def summary(self) -> str:
         if not self.success:
@@ -114,7 +117,10 @@ class StoryForgeWorkflow:
                 "outline_generated": bool(gsk.outline),
             }
 
-            # ── Build StoryGraph (deduplicated via SKL) ─────────────────────
+            # ── MVP 7: Knowledge Governance (before building graph) ────────────────
+            governance_report = govern_skl(gsk, auto_resolve=True)
+
+            # ── Build StoryGraph metadata ──────────────────────────────────────
             graph = StoryGraph(metadata={
                 "title": title,
                 "author": author,
@@ -187,6 +193,11 @@ class StoryForgeWorkflow:
                 merger_report["consistency_passed"] = report.passed
                 merger_report["consistency_info"] = report.info
 
+            merger_report["governance_passed"] = governance_report.validation.passed
+            merger_report["governance_issues"] = len(governance_report.validation.issues)
+            merger_report["governance_conflicts"] = len(governance_report.conflicts)
+            merger_report["governance_auto_corrections"] = len(governance_report.auto_corrections)
+
             result = WorkflowResult(success=True, graph=graph, chapters=chapters)
             result.step_results = {
                 "characters": all_characters,
@@ -196,6 +207,7 @@ class StoryForgeWorkflow:
             }
             result.global_skl = gsk
             result.merger_report = merger_report
+            result.governance_report = governance_report
             return result
 
         except Exception as e:
@@ -253,4 +265,159 @@ class StoryForgeWorkflow:
         except Exception:
             result.merger_report["scripts_generated"] = 0
 
+        return result
+
+    def run_incremental(
+        self,
+        novel_text: str,
+        title: str = "",
+        author: str = "",
+        cache: Optional[ChapterCache] = None,
+    ) -> WorkflowResult:
+        """Incremental run: reuse cached chapter results when content hasn't changed.
+
+        Args:
+            novel_text: Full novel text
+            cache: ChapterCache instance. If None, creates a new one.
+                   Results are stored in cache for future calls.
+
+        Returns:
+            WorkflowResult with changed_chapters and cache_stats populated.
+        """
+        if cache is None:
+            cache = ChapterCache()
+
+        chapters = parse_chapters(novel_text)
+        if not chapters:
+            return WorkflowResult(success=False, error_message="无法解析章节结构")
+
+        changed_chapters = cache.get_changed_chapters(chapters)
+        cached_chapters = [ch for ch in chapters if ch.id in cache.characters]
+
+        merger_report = {
+            "total_chapters": len(chapters),
+            "cached_chapters": len(cached_chapters),
+            "changed_chapters": len(changed_chapters),
+        }
+
+        if not changed_chapters:
+            merger_report["status"] = "fully_cached"
+            merger_report["cached_chapters"] = len(cached_chapters)
+            result = WorkflowResult(success=True, chapters=chapters)
+            result.merger_report = merger_report
+            return result
+
+        merger_report["status"] = "incremental"
+        merger_report["changed_chapter_ids"] = [getattr(ch, "id", "") for ch in changed_chapters]
+
+        # ── Extract knowledge only for changed chapters ────────────────────────
+        for ch in changed_chapters:
+            cid = getattr(ch, "id", "")
+            chars = self.char_agent.extract_from_chapters([ch], self.llm)
+            scenes = self.scene_agent.parse_from_chapters([ch], self.llm)
+            events = self.event_agent.extract_events_from_chapters([ch], self.llm)
+            rels = self.relation_agent.extract_from_chapters([ch], self.llm)
+            cache.update(ch, chars, scenes, events, rels)
+
+        # ── Merge all cached + changed results ──────────────────────────────
+        all_characters = []
+        all_scenes = []
+        all_events = []
+        all_relations = []
+        for ch in chapters:
+            cid = getattr(ch, "id", "")
+            if cid in cache.characters:
+                all_characters.extend(cache.characters[cid])
+                all_scenes.extend(cache.scenes[cid])
+                all_events.extend(cache.events[cid])
+                all_relations.extend(cache.relations[cid])
+
+        # ── Outline (always regenerate — fast) ───────────────────────────────
+        outline = {}
+        try:
+            story_outline = self.outline_agent.generate_outline(novel_text)
+            outline = {
+                "genre": story_outline.genre,
+                "theme": story_outline.theme,
+                "main_conflict": story_outline.main_conflict,
+                "arc_summary": story_outline.arc_summary,
+                "act_summaries": [
+                    {"act_number": a.act_number, "title": a.title, "summary": a.summary,
+                     "key_scenes": a.key_scenes}
+                    for a in story_outline.act_summaries
+                ],
+                "key_plot_points": story_outline.key_plot_points,
+            }
+        except Exception:
+            pass
+
+        # ── SKL Merge ─────────────────────────────────────────────────────
+        gsk = merge_chapters_to_skl(
+            title=title, author=author, chapters=chapters,
+            all_characters=all_characters, all_scenes=all_scenes,
+            all_relations=all_relations, all_events=all_events,
+            outline=outline,
+        )
+
+        merger_report.update({
+            "unique_characters": len(gsk.characters),
+            "unique_scenes": len(gsk.scenes),
+            "unique_relations": len(gsk.relations),
+            "unique_events": len(gsk.events),
+        })
+
+        # ── Governance (after merge) ─────────────────────────────────────────
+        governance_report = govern_skl(gsk, auto_resolve=True)
+
+        # ── Build StoryGraph ───────────────────────────────────────────────
+        graph = StoryGraph(metadata={
+            "title": title, "author": author,
+            "genre": outline.get("genre", "thriller"),
+            "created_at": datetime.now().isoformat(),
+            "adapted_by": "StoryForge", **merger_report,
+        })
+
+        for c in gsk.characters:
+            role_map = {"protagonist": CharacterRole.PROTAGONIST, "antagonist": CharacterRole.ANTAGONIST}
+            graph.characters.append(CharacterNode(
+                id=c.name, name=c.name,
+                role=role_map.get(c.role, CharacterRole.SUPPORTING),
+                description=c.description,
+                first_appearance=gsk.character_first_appearance.get(c.name, ""),
+            ))
+        for r in gsk.relations:
+            graph.relations.append(RelationNode(from_char=r.from_char, to_char=r.to_char,
+                                               relation_type=r.relation_type, description=r.description))
+        for s in gsk.scenes:
+            graph.scenes.append(SceneNode(id=s.title, title=s.title, location=s.location,
+                                          time=s.time_of_day, act=1, characters_present=s.characters,
+                                          summary=s.description))
+        type_map = {"conflict": EventType.CONFLICT, "revelation": EventType.REVELATION,
+                    "transition": EventType.TRANSITION, "turning_point": EventType.TURNING_POINT,
+                    "resolution": EventType.RESOLUTION}
+        for e in gsk.events:
+            src = e.get("source", {}) if isinstance(e.get("source"), dict) else {}
+            graph.events.append(EventNode(
+                title=e.get("title", ""),
+                event_type=type_map.get(e.get("event_type", ""), EventType.TRANSITION),
+                location=e.get("location", ""), time_marker=e.get("time_marker", ""),
+                participants=e.get("participants", []),
+                description=e.get("description", ""),
+                cause=e.get("cause", ""), consequence=e.get("consequence", ""),
+            ))
+
+        if self.run_consistency_check:
+            checker = ConsistencyChecker(graph)
+            report = checker.check_all()
+            graph.warnings = report.warnings
+            merger_report["consistency_passed"] = report.passed
+
+        merger_report["governance_passed"] = governance_report.validation.passed
+        merger_report["governance_issues"] = len(governance_report.validation.issues)
+        merger_report["governance_conflicts"] = len(governance_report.conflicts)
+        merger_report["governance_auto_corrections"] = len(governance_report.auto_corrections)
+
+        result = WorkflowResult(success=True, graph=graph, chapters=chapters)
+        result.merger_report = merger_report
+        result.governance_report = governance_report
         return result

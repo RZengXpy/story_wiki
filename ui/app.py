@@ -12,8 +12,9 @@ if str(_root) not in sys.path:
 import streamlit as st
 from datetime import datetime
 
-from core.workflow import StoryForgeWorkflow
+from core.workflow import StoryForgeWorkflow, WorkflowResult
 from core.story_graph import StoryGraph, CharacterRole, EventType, WarningSeverity
+from core.knowledge_governance import govern_skl, Patch, KnowledgeGovernor, GovernanceReport
 
 
 def init_session_state():
@@ -21,8 +22,11 @@ def init_session_state():
     defaults = {
         "graph": None,
         "workflow_result": None,
+        "governance_report": None,
+        "governor": None,
         "current_step": 0,
         "yaml_output": "",
+        "audit_history": [],
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -142,19 +146,21 @@ def render_results(result):
 
     graph = result.graph
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📋 元信息",
         "👥 角色",
         "🎭 事件",
         "🎬 场景",
         "⚠️ 警告",
+        "🛡️ 知识治理",
+        "📝 变更审计",
     ])
 
     with tab1:
         render_metadata_tab(graph)
 
     with tab2:
-        render_characters_tab(graph)
+        render_characters_tab(result)
 
     with tab3:
         render_events_tab(graph)
@@ -164,6 +170,12 @@ def render_results(result):
 
     with tab5:
         render_warnings_tab(graph)
+
+    with tab6:
+        render_governance_tab(result)
+
+    with tab7:
+        render_audit_tab(result)
 
 
 def render_metadata_tab(graph: StoryGraph):
@@ -189,11 +201,53 @@ def render_metadata_tab(graph: StoryGraph):
         st.text_area("YAML 输出", value=st.session_state["yaml_output"], height=400, disabled=True)
 
 
-def render_characters_tab(graph: StoryGraph):
-    """渲染角色标签页."""
+def render_characters_tab(result: WorkflowResult):
+    """渲染角色标签页 — 支持角色修正."""
+    if result is None or result.graph is None:
+        st.info("暂无数据")
+        return
+    graph = result.graph
+    gsk = result.global_skl
+
     if not graph.characters:
         st.info("暂无角色数据")
         return
+
+    # ── 角色修正区 ────────────────────────────────────────────
+    with st.expander("✏️ 修正角色信息"):
+        target_name = st.selectbox("选择要修正的角色", [""] + [c.name for c in graph.characters])
+        if target_name:
+            col1, col2 = st.columns(2)
+            with col1:
+                field = st.selectbox("修正字段", ["name", "description", "role"])
+            with col2:
+                new_value = st.text_input("新值")
+            reason = st.text_input("修正原因", placeholder="例如：用户确认")
+            if st.button("应用修正", type="primary") and result:
+                governor = KnowledgeGovernor(result.global_skl, graph=graph)
+                old_value = ""
+                for c in result.global_skl.characters:
+                    if c.name == target_name:
+                        old_value = getattr(c, field, "")
+                        break
+                patch = Patch(
+                    target_type="character",
+                    target_id=target_name,
+                    field=field,
+                    old_value=old_value,
+                    new_value=new_value,
+                    reason=reason or "用户修正",
+                )
+                success = governor.apply_patch(patch)
+                if success:
+                    st.session_state["workflow_result"] = result
+                    st.session_state["graph"] = graph
+                    st.success(f"已修正角色 '{target_name}' 的 {field} 为 '{new_value}'")
+                    st.rerun()
+                else:
+                    st.error("修正失败")
+
+    st.divider()
 
     for c in graph.characters:
         role = c.role.value if hasattr(c.role, "value") else c.role
@@ -313,6 +367,144 @@ def render_warnings_tab(graph: StoryGraph):
         st.info("提示")
         for w in infos:
             st.text(f"- **{w.code.value}**: {w.message}")
+
+
+def render_governance_tab(result):
+    """渲染知识治理标签页 — 展示治理报告，支持用户修正."""
+    st.subheader("🛡️ 知识治理报告")
+
+    if result is None or result.governance_report is None:
+        st.info("请先运行工作流以获取治理报告")
+        return
+
+    report = result.governance_report
+
+    # ── 概览指标 ───────────────────────────────────────────
+    val_passed = "✅ PASSED" if report.validation.passed else "❌ FAILED"
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("验证状态", val_passed)
+    with col2:
+        st.metric("冲突数", len(report.conflicts))
+    with col3:
+        st.metric("自动修正", len(report.auto_corrections))
+    with col4:
+        st.metric("审计记录", len(report.audit_trail.entries))
+
+    st.divider()
+
+    # ── 验证问题 ───────────────────────────────────────────
+    st.subheader("📋 验证问题")
+    if not report.validation.issues:
+        st.success("✅ 无验证问题")
+    else:
+        for issue in report.validation.issues:
+            sev_icon = "🔴" if issue.severity == "error" else "🟡" if issue.severity == "warning" else "ℹ️"
+            st.text(f"{sev_icon} [{issue.severity.upper()}] {issue.code}: {issue.message}")
+
+    st.divider()
+
+    # ── 冲突列表 ───────────────────────────────────────────
+    st.subheader("⚔️ 冲突列表")
+    if not report.conflicts:
+        st.success("✅ 未检测到冲突")
+    else:
+        for i, conflict in enumerate(report.conflicts, 1):
+            with st.expander(f"**冲突 {i}**: {conflict.conflict_type}", expanded=False):
+                st.text(f"类型: {conflict.conflict_type}")
+                st.text(f"Entity A: {conflict.entity_a}")
+                st.text(f"Entity B: {conflict.entity_b}")
+                st.text(f"仲裁策略: {conflict.resolution or '未仲裁'}")
+                if conflict.resolved_value:
+                    st.text(f"仲裁结果: {conflict.resolved_value}")
+
+    st.divider()
+
+    # ── 自动修正记录 ───────────────────────────────────────
+    st.subheader("🔧 自动修正")
+    if not report.auto_corrections:
+        st.info("无自动修正记录")
+    else:
+        for corr in report.auto_corrections:
+            st.text(f"• {corr.get('type', 'N/A')}: {corr}")
+
+    st.divider()
+
+    # ── 快速修正 ───────────────────────────────────────────
+    st.subheader("✏️ 快速修正")
+    with st.expander("添加角色修正", expanded=False):
+        target_name = st.selectbox(
+            "角色",
+            [""] + [c.name for c in (result.global_skl.characters if result.global_skl else [])],
+        )
+        field = st.selectbox("字段", ["name", "description", "role"])
+        new_val = st.text_input("新值")
+        reason = st.text_input("原因", placeholder="例如：用户确认")
+        if st.button("应用", type="primary") and target_name and result:
+            governor = KnowledgeGovernor(result.global_skl, graph=result.graph)
+            old_val = ""
+            for c in result.global_skl.characters:
+                if c.name == target_name:
+                    old_val = getattr(c, field, "")
+                    break
+            patch = Patch("character", target_name, field, old_val, new_val, reason or "用户修正")
+            if governor.apply_patch(patch):
+                st.success(f"已修正 '{target_name}.{field}' = '{new_val}'")
+                st.rerun()
+            else:
+                st.error("修正失败")
+
+
+def render_audit_tab(result):
+    """渲染变更审计标签页 — 展示 AuditTrail 历史."""
+    st.subheader("📝 变更审计记录")
+
+    if result is None or result.governance_report is None:
+        st.info("请先运行工作流以获取审计记录")
+        return
+
+    report = result.governance_report
+    entries = report.audit_trail.entries
+
+    if not entries:
+        st.info("暂无审计记录")
+        return
+
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        st.metric("记录总数", len(entries))
+    with col2:
+        st.metric("最近更新", entries[-1].timestamp if entries else "-")
+
+    st.divider()
+
+    # Action 统计
+    from collections import Counter
+    action_counts = Counter(e.action for e in entries)
+    st.caption("操作类型分布: " + " | ".join(f"{k}: {v}" for k, v in action_counts.items()))
+
+    st.divider()
+
+    # 完整历史
+    for i, entry in enumerate(reversed(entries)):
+        action_icon = {
+            "patch": "✏️", "auto_correct": "🔧", "resolve_conflict": "⚔️",
+            "rollback": "↩️",
+        }.get(entry.action, "📝")
+
+        with st.expander(
+            f"{action_icon} [{entry.action}] {entry.target_type} / {entry.target_id} — {entry.timestamp[:19]}",
+            expanded=False,
+        ):
+            if entry.reason:
+                st.text(f"原因: {entry.reason}")
+            if entry.user:
+                st.text(f"用户: {entry.user}")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.text(f"修改前: {entry.before}")
+            with col2:
+                st.text(f"修改后: {entry.after}")
 
 
 def main():
