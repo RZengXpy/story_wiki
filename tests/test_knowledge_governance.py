@@ -594,6 +594,86 @@ def test_governance_workflow_integration_fields():
     print("  PASS: workflow_integration_fields")
 
 
+def test_storygraph_apply_character_rename():
+    """Test that apply_character_rename propagates to characters, scenes, events, relations, scripts."""
+    from core.story_graph import StoryGraph, CharacterNode, SceneNode, EventNode, ScriptNode, ScriptItem, CharacterRole, EventType
+
+    graph = StoryGraph()
+    graph.characters = [
+        CharacterNode(id="林远", name="林远", role=CharacterRole.PROTAGONIST),
+    ]
+    graph.scenes = [
+        SceneNode(id="scene1", title="图书馆", characters_present=["林远", "陈雨"]),
+    ]
+    graph.events = [
+        EventNode(title="相遇", event_type=EventType.REVELATION, participants=["林远"]),
+    ]
+    graph.relations = [
+        # Using a mock relation-like object since RelationNode is not defined as dict-like
+    ]
+    # Manually add relation via __dict__ approach
+    class MockRelation:
+        def __init__(self):
+            self.from_char = "林远"
+            self.to_char = "陈雨"
+    graph.relations = [MockRelation()]
+
+    # Add a script with dialogue
+    graph.scripts = {
+        "scene1": ScriptNode(
+            id="scene1",
+            content=[
+                ScriptItem(type="dialogue", character="林远", text="林远说：你好"),
+                ScriptItem(type="action", text="林远走进图书馆"),
+            ]
+        )
+    }
+
+    changed = graph.apply_character_rename("林远", "林远（真名）")
+
+    # CharacterNode
+    assert graph.characters[0].name == "林远（真名）"
+    assert graph.characters[0].id == "林远（真名）"
+    # Scene
+    assert "林远（真名）" in graph.scenes[0].characters_present
+    assert "林远" not in graph.scenes[0].characters_present
+    # Event
+    assert "林远（真名）" in graph.events[0].participants
+    assert "林远" not in graph.events[0].participants
+    # Relation
+    assert graph.relations[0].from_char == "林远（真名）"
+    # Scripts
+    assert graph.scripts["scene1"].content[0].character == "林远（真名）"
+    assert "林远（真名）" in graph.scripts["scene1"].content[1].text
+
+    print("  PASS: storygraph_apply_character_rename")
+
+
+def test_governor_with_graph_propagates_rename():
+    """Test KnowledgeGovernor.apply_patch propagates rename to StoryGraph."""
+    from core.story_graph import StoryGraph, CharacterNode, SceneNode, ScriptNode, ScriptItem, CharacterRole
+
+    gsk = make_gsk(characters=[make_char("林远", role="protagonist")])
+    graph = StoryGraph()
+    graph.characters = [CharacterNode(id="林远", name="林远", role=CharacterRole.PROTAGONIST)]
+    graph.scenes = [SceneNode(id="scene1", title="图书馆", characters_present=["林远"])]
+    graph.scripts = {"scene1": ScriptNode(id="scene1", content=[ScriptItem(type="dialogue", character="林远", text="林远：你好")])}
+
+    governor = KnowledgeGovernor(gsk, graph=graph)
+    patch = Patch("character", "林远", "name", "林远", "林远（真名）", reason="用户确认")
+    success = governor.apply_patch(patch)
+
+    assert success
+    # SKL updated
+    assert gsk.characters[0].name == "林远（真名）"
+    # Graph updated
+    assert graph.characters[0].name == "林远（真名）"
+    assert graph.scenes[0].characters_present[0] == "林远（真名）"
+    assert graph.scripts["scene1"].content[0].character == "林远（真名）"
+
+    print("  PASS: governor_with_graph_propagates_rename")
+
+
 # ── Run all tests ──────────────────────────────────────────────────────────────
 
 
@@ -642,6 +722,9 @@ if __name__ == "__main__":
         test_governor_apply_patch,
         test_governance_report_summary,
         test_governance_workflow_integration_fields,
+        # StoryGraph patch propagation
+        test_storygraph_apply_character_rename,
+        test_governor_with_graph_propagates_rename,
     ]
 
     passed = 0

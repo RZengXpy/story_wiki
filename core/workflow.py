@@ -116,7 +116,10 @@ class StoryForgeWorkflow:
                 "outline_generated": bool(gsk.outline),
             }
 
-            # ── Build StoryGraph (deduplicated via SKL) ─────────────────────
+            # ── MVP 7: Knowledge Governance (before building graph) ────────────────
+            governance_report = govern_skl(gsk, auto_resolve=True)
+
+            # ── Build StoryGraph metadata ──────────────────────────────────────
             graph = StoryGraph(metadata={
                 "title": title,
                 "author": author,
@@ -189,8 +192,6 @@ class StoryForgeWorkflow:
                 merger_report["consistency_passed"] = report.passed
                 merger_report["consistency_info"] = report.info
 
-            # ── MVP 7: Knowledge Governance ──────────────────────────────────
-            governance_report = govern_skl(gsk, auto_resolve=True)
             merger_report["governance_passed"] = governance_report.validation.passed
             merger_report["governance_issues"] = len(governance_report.validation.issues)
             merger_report["governance_conflicts"] = len(governance_report.conflicts)

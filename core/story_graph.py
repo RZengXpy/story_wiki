@@ -134,3 +134,50 @@ class StoryGraph:
             "warnings": self.warnings,
         })
         return yaml.dump(data, allow_unicode=True, sort_keys=False, default_flow_style=False)
+
+    def apply_character_rename(self, old_name: str, new_name: str) -> int:
+        """Rename a character across all entities in the graph. Returns count of changes made."""
+        changed = 0
+
+        # Character nodes
+        for cn in self.characters:
+            if cn.id == old_name or cn.name == old_name:
+                cn.name = new_name
+                cn.id = new_name
+                changed += 1
+
+        # Scene characters_present
+        for sn in self.scenes:
+            if old_name in sn.characters_present:
+                idx = sn.characters_present.index(old_name)
+                sn.characters_present[idx] = new_name
+                changed += 1
+
+        # Event participants
+        for en in self.events:
+            if old_name in en.participants:
+                idx = en.participants.index(old_name)
+                en.participants[idx] = new_name
+                changed += 1
+
+        # Relations
+        for rn in self.relations:
+            if rn.from_char == old_name:
+                rn.from_char = new_name
+                changed += 1
+            if rn.to_char == old_name:
+                rn.to_char = new_name
+                changed += 1
+
+        # Scripts: character field and text content
+        for script_node in self.scripts.values():
+            for item in script_node.content:
+                if item.character == old_name:
+                    item.character = new_name
+                    changed += 1
+                # Replace character name in text (word-boundary aware)
+                if old_name in item.text:
+                    item.text = item.text.replace(old_name, new_name)
+                    changed += 1
+
+        return changed

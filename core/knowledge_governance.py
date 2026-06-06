@@ -822,8 +822,9 @@ class GovernanceReport:
 class KnowledgeGovernor:
     """Main entry point for SKL knowledge governance."""
 
-    def __init__(self, gsk):
+    def __init__(self, gsk, graph=None):
         self.gsk = gsk
+        self.graph = graph
         self.audit_trail = AuditTrail()
         self.validator = SKLValidator(gsk)
         self.conflict_resolver = ConflictResolver(gsk, self.audit_trail)
@@ -855,15 +856,15 @@ class KnowledgeGovernor:
         )
 
     def apply_patch(self, patch: Patch) -> bool:
-        """Apply a user correction."""
+        """Apply a user correction to SKL and optionally propagate to StoryGraph."""
         success = self.patch_handler.apply(patch)
-        if success:
-            # Update governance report patches count
-            pass
+        if success and self.graph is not None:
+            if patch.target_type == "character" and patch.field == "name":
+                self.graph.apply_character_rename(patch.old_value, patch.new_value)
         return success
 
 
-def govern_skl(gsk, auto_resolve: bool = True) -> GovernanceReport:
+def govern_skl(gsk, auto_resolve: bool = True, graph=None) -> GovernanceReport:
     """Convenience function: run full governance on a GlobalStoryKnowledge instance."""
-    governor = KnowledgeGovernor(gsk)
+    governor = KnowledgeGovernor(gsk, graph=graph)
     return governor.govern(auto_resolve=auto_resolve)
