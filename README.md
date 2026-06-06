@@ -34,23 +34,22 @@ BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 streamlit run ui/app.py
 ```
 
-打开浏览器访问 http://localhost:8501，输入小说文本并配置模型后点击「开始转换」。
+打开浏览器访问 <http://localhost:8501>，输入小说文本并配置模型后点击「开始转换」。
 
 ### 4. 命令行测试
 
 ```bash
 # 单元测试（无需 API key）
-pytest tests/test_chapter_parser.py tests/test_knowledge_merger.py -v
+pytest tests/test_chapter_parser.py tests/test_knowledge_merger.py tests/test_knowledge_governance.py tests/test_incremental.py tests/test_async_pipeline.py tests/test_mvp1_2.py -v
 
 # 集成测试（需要 API key）
-pytest tests/test_workflow_mvp4.py -v
-pytest tests/test_workflow_mvp5.py -v
-pytest tests/test_workflow_mvp6.py -v
+pytest tests/test_workflow.py tests/test_workflow_mvp4.py tests/test_workflow_mvp5.py tests/test_workflow_mvp6.py -v
+pytest tests/test_pipeline.py tests/test_event_agent.py -v
 ```
 
 ## 项目结构
 
-```
+```text
 story_wiki/
 ├── core/                        # 核心模块
 │   ├── llm_client.py           # LLM 调用封装
@@ -70,7 +69,8 @@ story_wiki/
 ├── pipeline/
 │   └── orchestrator.py          # StoryPipeline 编排器
 ├── schema/
-│   └── models.py               # 基础数据模型
+│   ├── models.py               # 基础数据模型
+│   └── screenplay_schema.md    # YAML 剧本 Schema 定义文档
 ├── ui/
 │   └── app.py                   # Streamlit Web UI
 └── tests/
@@ -83,7 +83,7 @@ story_wiki/
 
 ## 架构概览
 
-```
+```text
 小说文本
   │
   ▼
@@ -129,31 +129,36 @@ LocalKnowledge ──→ KnowledgeMerger.merge_all()
 
 ## 输出格式
 
+完整 Schema 定义见 [`schema/screenplay_schema.md`](schema/screenplay_schema.md)。
+
+### 快速示例
+
 ```yaml
 story_graph:
   version: "1.0"
   metadata:
     title: "雾港档案"
-    author: "StoryForge"
     genre: "thriller"
-    total_chapters: 3
-    unique_characters: 6
-    unique_scenes: 18
-  characters: [...]
-  relations: [...]
-  events: [...]
-  scenes: [...]
+  characters:
+    - id: "林川"
+      name: "林川"
+      role: "protagonist"
+  scenes:
+    - id: "scene_001"
+      title: "图书馆相遇"
+      location: "雾港镇图书馆"
   scripts:
     scene_001:
-      id: "scene_001"
       content:
         - type: "action"
-          text: "林远推开公寓的门..."
+          text: "图书馆内，灯光昏暗。"
         - type: "dialogue"
-          character: "林远"
-          text: "我回来了。"
-  warnings: [...]
+          character: "林川"
+          text: "请问，您需要什么？"
+  warnings: []
 ```
+
+完整示例请参考 [`schema/screenplay_schema.md`](schema/screenplay_schema.md)。
 
 ## 依赖
 
@@ -164,6 +169,14 @@ story_graph:
 | pyyaml | >= 6.0.1 | YAML 序列化 |
 | pytest | >= 8.0.0 | 单元测试 |
 | pytest-asyncio | >= 0.23.0 | 异步测试支持 |
+
+## Demo 视频
+
+请将 demo 视频上传至 bilibili / 云盘等外部平台，然后将链接填入下方：
+
+[![StoryForge Demo 视频]](YOUR_DEMO_VIDEO_URL_HERE)
+
+> 上传后将 `YOUR_DEMO_VIDEO_URL_HERE` 替换为实际的视频链接地址。
 
 ## 开发记录
 

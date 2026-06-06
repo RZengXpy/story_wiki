@@ -39,11 +39,15 @@ htmlcov/
 # Temp files
 commit_msg.txt
 
+# Project-specific entry points (don't commit thin wrappers)
+app.py
+
 # Project docs
 st.md
 think.md
 MIGRATION.md
 对话摘要.md
+
 # Output
 output/
 
