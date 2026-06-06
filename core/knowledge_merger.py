@@ -108,16 +108,28 @@ class GlobalStoryKnowledge:
         return removed
 
     def merge_scenes(self, incoming: list[Scene]) -> int:
-        """Merge scene list, deduplicating by (title, location). Returns count removed."""
+        """Merge scene list, deduplicating by title only. Stores variant locations in location_variants."""
         removed = 0
         for s in incoming:
-            duplicate = any(
-                e.title == s.title and e.location == s.location
-                for e in self.scenes
+            # Find existing scene with same title
+            existing = next(
+                (e for e in self.scenes if e.title == s.title), None
             )
-            if not duplicate:
+            if existing is None:
+                # First occurrence — use its location as primary
                 self.scenes.append(s)
             else:
+                # Same title, different location: record variant
+                if s.location and s.location != existing.location:
+                    if s.location not in existing.location_variants:
+                        existing.location_variants.append(s.location)
+                    # Merge characters from the variant scene
+                    for ch in s.characters:
+                        if ch not in existing.characters:
+                            existing.characters.append(ch)
+                    # Keep longer description
+                    if len(s.description) > len(existing.description):
+                        existing.description = s.description
                 removed += 1
         return removed
 
