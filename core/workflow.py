@@ -20,6 +20,7 @@ from core.knowledge_merger import (
     merge_chapters_to_skl,
 )
 from core.consistency_checker import ConsistencyChecker
+from core.knowledge_governance import govern_skl, GovernanceReport
 from agent import CharacterAgent, SceneAgent, ScriptAgent, EventAgent, RelationAgent, OutlineAgent
 
 
@@ -32,6 +33,7 @@ class WorkflowResult:
     chapters: list = field(default_factory=list)
     global_skl: Optional[object] = field(default=None)  # GlobalStoryKnowledge
     merger_report: dict = field(default_factory=dict)
+    governance_report: Optional[GovernanceReport] = field(default=None)
 
     def summary(self) -> str:
         if not self.success:
@@ -187,6 +189,13 @@ class StoryForgeWorkflow:
                 merger_report["consistency_passed"] = report.passed
                 merger_report["consistency_info"] = report.info
 
+            # ── MVP 7: Knowledge Governance ──────────────────────────────────
+            governance_report = govern_skl(gsk, auto_resolve=True)
+            merger_report["governance_passed"] = governance_report.validation.passed
+            merger_report["governance_issues"] = len(governance_report.validation.issues)
+            merger_report["governance_conflicts"] = len(governance_report.conflicts)
+            merger_report["governance_auto_corrections"] = len(governance_report.auto_corrections)
+
             result = WorkflowResult(success=True, graph=graph, chapters=chapters)
             result.step_results = {
                 "characters": all_characters,
@@ -196,6 +205,7 @@ class StoryForgeWorkflow:
             }
             result.global_skl = gsk
             result.merger_report = merger_report
+            result.governance_report = governance_report
             return result
 
         except Exception as e:
