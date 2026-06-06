@@ -37,6 +37,8 @@ class Scene:
     dialogue: list[dict] = field(default_factory=list)
     notes: str = ""
     source: Optional[SourceTrace] = None
+    # Additional locations seen for this scene title (for deduplication by title only)
+    location_variants: list[str] = field(default_factory=list)
 
     def add_dialogue(self, speaker: str, text: str):
         self.dialogue.append({"speaker": speaker, "text": text})
