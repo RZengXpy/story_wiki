@@ -1,5 +1,13 @@
-"""StoryForge — AI Screenwriter Studio Streamlit UI."""
+"""StoryForge — AI Screenwriter Studio Streamlit UI.
 
+Features:
+- Chapter-based knowledge extraction (Character / Scene / Event / Relation / Outline)
+- Local → Global knowledge merge (GlobalStoryKnowledge / SKL)
+- Knowledge Governance (conflict resolution, validation, patching, audit)
+- Consistency checking (4 types of warnings)
+- SKL → Screenplay generation (scene-by-scene, SKL-context-injected)
+- Inline screenplay editing with live YAML preview and export
+"""
 from __future__ import annotations
 
 import sys
@@ -10,68 +18,80 @@ if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
 import streamlit as st
+import yaml
 from datetime import datetime
 
 from core.workflow import StoryForgeWorkflow, WorkflowResult
 from core.story_graph import StoryGraph, CharacterRole, EventType, WarningSeverity
-from core.knowledge_governance import govern_skl, Patch, KnowledgeGovernor, GovernanceReport
+from core.knowledge_governance import (
+    Patch, KnowledgeGovernor, GovernanceReport,
+    AuditEntry, AuditTrail,
+)
+
+
+# ── Session State ──────────────────────────────────────────────────────────────
 
 
 def init_session_state():
-    """初始化会话状态."""
     defaults = {
-        "graph": None,
         "workflow_result": None,
         "governance_report": None,
-        "governor": None,
-        "current_step": 0,
+        "current_tab": 0,
         "yaml_output": "",
-        "audit_history": [],
+        "edited_scripts": {},          # scene_id -> list of edited ScriptItem dicts
+        "show_scripts_generated": False,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = val
 
 
+# ── Header & Sidebar ───────────────────────────────────────────────────────────
+
+
 def render_header():
-    """渲染页面头部."""
     st.set_page_config(
         page_title="StoryForge — AI 编剧工作台",
         page_icon="🎬",
         layout="wide",
     )
     st.title("🎬 StoryForge AI 编剧工作台")
+    st.markdown("将小说文本自动转换为结构化、可编辑的 YAML 剧本")
     st.markdown("---")
 
 
 def render_sidebar():
-    """渲染侧边栏配置."""
     with st.sidebar:
         st.header("⚙️ 配置")
 
         api_key = st.text_input(
-            "OpenAI API Key",
+            "API Key",
             type="password",
-            help="输入你的 OpenAI API Key",
+            help="OpenAI / 阿里通义 / DeepSeek 等兼容 API Key",
+            placeholder="sk-...",
+            key="sidebar_api_key",
         )
 
         model = st.selectbox(
             "模型",
-            ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
+            ["deepseek-v4-flash", "gpt-4o", "gpt-4o-mini", "qwen-plus"],
             index=0,
         )
 
         run_check = st.checkbox("启用一致性检查", value=True)
+        run_governance = st.checkbox("启用知识治理", value=True)
 
         st.markdown("---")
-        st.caption("StoryForge v0.1.0")
-        st.caption("基于多Agent架构的AI小说转剧本工具")
+        st.caption("StoryForge v1.0")
+        st.caption("基于多 Agent 架构的 AI 小说转剧本工具")
 
-    return api_key, model, run_check
+    return api_key, model, run_check, run_governance
+
+
+# ── Upload Section ─────────────────────────────────────────────────────────────
 
 
 def render_upload_section():
-    """渲染小说上传区域."""
     st.header("📖 上传小说")
 
     col1, col2 = st.columns([3, 1])
@@ -79,154 +99,191 @@ def render_upload_section():
     with col1:
         novel_text = st.text_area(
             "粘贴小说文本",
-            height=300,
-            placeholder="在此粘贴小说文本内容...",
+            height=280,
+            placeholder="在此粘贴小说文本内容...\n支持格式：纯文本小说，自动识别「第X章」进行拆分",
         )
 
     with col2:
-        title = st.text_input("剧本标题", placeholder="例如：射雕英雄传")
+        title = st.text_input("剧本标题", placeholder="例如：雾港档案")
         author = st.text_input("原著作者", placeholder="例如：金庸")
 
-    uploaded_file = st.file_uploader(
-        "或者上传 .txt 文件",
-        type=["txt"],
-        help="支持纯文本格式的小说文件",
-    )
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        uploaded_file = st.file_uploader(
+            "📁 上传 .txt 文件",
+            type=["txt"],
+            help="支持纯文本格式的小说文件",
+        )
+    with c2:
+        yaml_file = st.file_uploader(
+            "📄 导入 YAML（编辑后重新加载）",
+            type=["yaml", "yml"],
+            help="导入之前导出的 YAML 文件，继续编辑",
+        )
 
+    yaml_data = None
     if uploaded_file is not None:
         content = uploaded_file.read().decode("utf-8")
         if novel_text:
             st.warning("已加载上传文件，将覆盖文本框内容")
         novel_text = content
 
-    return novel_text, title, author
+    if yaml_file is not None:
+        try:
+            yaml_data = yaml.safe_load(yaml_file)
+            st.success(f"已导入 YAML：{yaml_data.get('story_graph', {}).get('metadata', {}).get('title', '未命名')}")
+        except Exception as e:
+            st.error(f"导入失败：{e}")
+
+    return novel_text, title, author, yaml_data
 
 
-def render_workflow_run(novel_text: str, title: str, author: str, api_key: str, model: str, run_check: bool):
-    """渲染工作流执行按钮和进度."""
+# ── Workflow Execution ─────────────────────────────────────────────────────────
+
+
+def render_workflow_buttons(novel_text, title, author, api_key, model, run_check):
+    """Render SKL build and screenplay generation buttons."""
+    col1, col2 = st.columns(2)
+
+    with col1:
+        btn_build = st.button(
+            "📚 构建知识图谱（SKL）",
+            type="primary",
+            use_container_width=True,
+            help="提取角色/场景/事件/关系，构建全局知识层",
+        )
+    with col2:
+        btn_scripts = st.button(
+            "🎬 生成剧本（含 SKL）",
+            use_container_width=True,
+            help="构建知识图谱 + 逐场景生成剧本（需要更多 API 调用）",
+        )
+
+    result = None
+    workflow = None
+
     if not novel_text:
         st.info("请先输入小说文本")
         return None, None
-
     if not api_key:
-        st.error("请输入 OpenAI API Key")
+        st.error("请输入 API Key")
         return None, None
 
-    if st.button("🚀 开始转换", type="primary", use_container_width=True):
-        with st.spinner("正在转换，请稍候..."):
+    if btn_build:
+        with st.spinner("正在提取知识，请稍候..."):
             try:
                 workflow = StoryForgeWorkflow(
                     model=model,
                     api_key=api_key,
                     run_consistency_check=run_check,
                 )
-                result = workflow.run(novel_text, title=title, author=author)
-                return result, workflow
+                result = workflow.run(novel_text, title=title or "未命名", author=author)
             except Exception as e:
-                st.error(f"执行失败: {e}")
-                return None, None
+                st.error(f"执行失败：{e}")
+        st.rerun()
+        return result, workflow
+
+    if btn_scripts:
+        with st.spinner("正在构建知识图谱 + 生成剧本，请稍候（耗时较长）..."):
+            try:
+                workflow = StoryForgeWorkflow(
+                    model=model,
+                    api_key=api_key,
+                    run_consistency_check=run_check,
+                )
+                result = workflow.run_with_scripts(
+                    novel_text, title=title or "未命名", author=author
+                )
+                st.session_state["show_scripts_generated"] = True
+            except Exception as e:
+                st.error(f"执行失败：{e}")
+        st.rerun()
+        return result, workflow
 
     return None, None
 
 
-def render_results(result):
-    """渲染执行结果."""
-    st.header("📊 执行结果")
-
-    if result is None:
-        st.info("尚未执行工作流")
-        return
-
-    summary = result.summary()
-    st.text(summary)
-
-    if not result.success:
-        st.error(f"执行失败: {result.error_message}")
-        return
-
-    graph = result.graph
-
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "📋 元信息",
-        "👥 角色",
-        "🎭 事件",
-        "🎬 场景",
-        "⚠️ 警告",
-        "🛡️ 知识治理",
-        "📝 变更审计",
-    ])
-
-    with tab1:
-        render_metadata_tab(graph)
-
-    with tab2:
-        render_characters_tab(result)
-
-    with tab3:
-        render_events_tab(graph)
-
-    with tab4:
-        render_scenes_tab(graph)
-
-    with tab5:
-        render_warnings_tab(graph)
-
-    with tab6:
-        render_governance_tab(result)
-
-    with tab7:
-        render_audit_tab(result)
+# ── Result Summary ────────────────────────────────────────────────────────────
 
 
-def render_metadata_tab(graph: StoryGraph):
-    """渲染元信息标签页."""
-    meta = graph.metadata
-    col1, col2 = st.columns(2)
-    with col1:
-        st.text(f"**标题**: {meta.get('title', '未命名')}")
-        st.text(f"**作者**: {meta.get('author', '未知')}")
-        st.text(f"**题材**: {meta.get('genre', '未指定')}")
-    with col2:
-        st.text(f"**创建时间**: {meta.get('created_at', '未知')}")
-        st.text(f"**改编工具**: {meta.get('adapted_by', 'StoryForge')}")
-        st.text(f"**版本**: {graph.version}")
-
-    st.divider()
-    if st.button("📄 导出 YAML", use_container_width=True):
-        yaml_output = graph.to_yaml()
-        st.session_state["yaml_output"] = yaml_output
-        st.success("YAML 已生成，请查看下方导出区域")
-
-    if st.session_state.get("yaml_output"):
-        st.text_area("YAML 输出", value=st.session_state["yaml_output"], height=400, disabled=True)
-
-
-def render_characters_tab(result: WorkflowResult):
-    """渲染角色标签页 — 支持角色修正."""
-    if result is None or result.graph is None:
-        st.info("暂无数据")
+def render_summary(result: WorkflowResult):
+    if not result or not result.success:
         return
     graph = result.graph
     gsk = result.global_skl
+    scripts_count = len(graph.scripts) if graph.scripts else 0
+    total_items = sum(len(s.content) for s in graph.scripts.values()) if graph.scripts else 0
 
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    with col1:
+        st.metric("章节", len(result.chapters))
+    with col2:
+        st.metric("角色", len(graph.characters))
+    with col3:
+        st.metric("场景", len(graph.scenes))
+    with col4:
+        st.metric("关系", len(graph.relations))
+    with col5:
+        st.metric("事件", len(graph.events))
+    with col6:
+        st.metric("剧本", f"{scripts_count}场景/{total_items}条", delta="🎬" if scripts_count else None)
+
+
+# ── Tab: Metadata ─────────────────────────────────────────────────────────────
+
+
+def render_metadata_tab(graph: StoryGraph):
+    meta = graph.metadata
+    c1, c2 = st.columns(2)
+    with c1:
+        st.text(f"**标题**: {meta.get('title', '未命名')}")
+        st.text(f"**作者**: {meta.get('author', '未知')}")
+        st.text(f"**题材**: {meta.get('genre', '未指定')}")
+        st.text(f"**改编工具**: {meta.get('adapted_by', 'StoryForge')}")
+    with c2:
+        st.text(f"**创建时间**: {meta.get('created_at', '未知')}")
+        st.text(f"**版本**: {graph.version}")
+        st.text(f"**章节数**: {meta.get('total_chapters', '-')}")
+        st.text(f"**去重角色**: {meta.get('unique_characters', '-')}")
+
+    # Merger stats
+    st.divider()
+    st.subheader("📊 知识合并报告")
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.text(f"去重角色: {meta.get('unique_characters', '-')}")
+    with c2:
+        st.text(f"去重场景: {meta.get('unique_scenes', '-')}")
+    with c3:
+        st.text(f"去重关系: {meta.get('unique_relations', '-')}")
+    with c4:
+        st.text(f"去重事件: {meta.get('unique_events', '-')}")
+
+
+# ── Tab: Characters ────────────────────────────────────────────────────────────
+
+
+def render_characters_tab(result: WorkflowResult, graph: StoryGraph, gsk):
     if not graph.characters:
         st.info("暂无角色数据")
         return
 
-    # ── 角色修正区 ────────────────────────────────────────────
+    # ── Character correction panel ──────────────────────────────────────────
     with st.expander("✏️ 修正角色信息"):
-        target_name = st.selectbox("选择要修正的角色", [""] + [c.name for c in graph.characters])
+        target_name = st.selectbox(
+            "选择角色", [""] + [c.name for c in graph.characters],
+        )
         if target_name:
-            col1, col2 = st.columns(2)
-            with col1:
-                field = st.selectbox("修正字段", ["name", "description", "role"])
-            with col2:
+            c1, c2 = st.columns(2)
+            with c1:
+                field = st.selectbox("修正字段", ["name", "role", "description"])
+            with c2:
                 new_value = st.text_input("新值")
             reason = st.text_input("修正原因", placeholder="例如：用户确认")
-            if st.button("应用修正", type="primary") and result:
-                governor = KnowledgeGovernor(result.global_skl, graph=graph)
+            if st.button("应用修正", type="primary"):
+                governor = KnowledgeGovernor(gsk, graph=graph)
                 old_value = ""
-                for c in result.global_skl.characters:
+                for c in gsk.characters:
                     if c.name == target_name:
                         old_value = getattr(c, field, "")
                         break
@@ -240,9 +297,7 @@ def render_characters_tab(result: WorkflowResult):
                 )
                 success = governor.apply_patch(patch)
                 if success:
-                    st.session_state["workflow_result"] = result
-                    st.session_state["graph"] = graph
-                    st.success(f"已修正角色 '{target_name}' 的 {field} 为 '{new_value}'")
+                    st.success(f"已修正「{target_name}」的 {field} → 「{new_value}」")
                     st.rerun()
                 else:
                     st.error("修正失败")
@@ -252,42 +307,105 @@ def render_characters_tab(result: WorkflowResult):
     for c in graph.characters:
         role = c.role.value if hasattr(c.role, "value") else c.role
         with st.expander(f"**{c.name}** ({role})", expanded=True):
-            col1, col2 = st.columns(2)
-            with col1:
+            c1, c2 = st.columns(2)
+            with c1:
                 st.text(f"ID: {c.id}")
-                st.text(f"年龄: {c.age}")
-                st.text(f"性别: {c.gender}")
-            with col2:
-                st.text(f"定位: {role}")
                 st.text(f"首次出现: {c.first_appearance}")
+            with c2:
+                st.text(f"定位: {role}")
             if c.description:
                 st.text(f"描述: {c.description}")
 
-    st.divider()
-    st.subheader("关系网络")
+
+# ── Tab: Relations ────────────────────────────────────────────────────────────
+
+
+def render_relations_tab(result: WorkflowResult, graph: StoryGraph):
     if not graph.relations:
         st.info("暂无关系数据")
-    else:
-        for r in graph.relations:
-            rtype = r.relation_type.value if hasattr(r.relation_type, "value") else r.relation_type
-            st.text(f"- {r.from_char} --[{rtype}]--> {r.to_char}: {r.description}")
+        return
+
+    rel_type_labels = {
+        "family": "血缘",
+        "friend": "朋友",
+        "enemy": "敌对",
+        "romantic": "恋爱",
+        "professional": "职业",
+        "stranger": "陌生",
+    }
+
+    # Relation type summary
+    from collections import Counter
+    type_counts = Counter(r.relation_type if hasattr(r, "relation_type") else getattr(r, "relation_type", "stranger")
+                          for r in graph.relations)
+    st.subheader(f"共 {len(graph.relations)} 条关系")
+    cols = st.columns(len(type_counts))
+    for i, (rtype, count) in enumerate(type_counts.most_common()):
+        with cols[i] if i < len(cols) else st:
+            st.metric(rel_type_labels.get(rtype, rtype), count)
+
+    st.divider()
+
+    for r in graph.relations:
+        rtype = r.relation_type if hasattr(r.relation_type, "value") else getattr(r, "relation_type", "stranger")
+        rtype_label = rel_type_labels.get(rtype, rtype)
+        with st.expander(f"**{r.from_char}** → [{rtype_label}] → **{r.to_char}**", expanded=False):
+            st.text(f"类型: {rtype_label} ({rtype})")
+            if r.description:
+                st.text(f"描述: {r.description}")
 
 
-def render_events_tab(graph: StoryGraph):
-    """渲染事件标签页."""
+# ── Tab: Events ───────────────────────────────────────────────────────────────
+
+
+def render_events_tab(result: WorkflowResult, graph: StoryGraph):
     if not graph.events:
         st.info("暂无事件数据")
         return
 
-    for i, e in enumerate(graph.events, 1):
-        etype = e.event_type.value if hasattr(e.event_type, "value") else e.event_type
-        with st.expander(f"**{i}. [{etype}] {e.title}**", expanded=False):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.text(f"地点: {e.location}")
-                st.text(f"时间: {e.time_marker}")
-            with col2:
-                st.text(f"参与者: {', '.join(e.participants)}")
+    st.subheader(f"共 {len(graph.events)} 个事件")
+
+    # Event type filter
+    event_types = sorted(set(
+        e.event_type.value if hasattr(e.event_type, "value") else getattr(e, "event_type", "transition")
+        for e in graph.events
+    ))
+    selected_types = st.multiselect(
+        "筛选事件类型", event_types, default=event_types,
+        format_func=lambda x: x.replace("_", " ").title(),
+    )
+
+    filtered = [
+        e for e in graph.events
+        if (e.event_type.value if hasattr(e.event_type, "value") else getattr(e, "event_type", "transition")) in selected_types
+    ]
+
+    event_type_labels = {
+        "conflict": "冲突",
+        "revelation": "揭示",
+        "transition": "过渡",
+        "turning_point": "转折",
+        "resolution": "收尾",
+    }
+    event_type_icons = {
+        "conflict": "⚔️",
+        "revelation": "💡",
+        "transition": "➡️",
+        "turning_point": "🔄",
+        "resolution": "✅",
+    }
+
+    for i, e in enumerate(filtered, 1):
+        etype = e.event_type.value if hasattr(e.event_type, "value") else getattr(e, "event_type", "transition")
+        icon = event_type_icons.get(etype, "")
+        label = event_type_labels.get(etype, etype)
+        with st.expander(f"**{i}. [{label}] {e.title}** {icon}", expanded=False):
+            c1, c2 = st.columns(2)
+            with c1:
+                st.text(f"地点: {e.location or '未标注'}")
+                st.text(f"时间: {e.time_marker or '未标注'}")
+            with c2:
+                st.text(f"参与者: {', '.join(e.participants) if e.participants else '无'}")
             if e.description:
                 st.text(f"描述: {e.description}")
             if e.cause:
@@ -296,27 +414,32 @@ def render_events_tab(graph: StoryGraph):
                 st.text(f"后果: {e.consequence}")
 
 
-def render_scenes_tab(graph: StoryGraph):
-    """渲染场景标签页."""
+# ── Tab: Scenes ──────────────────────────────────────────────────────────────
+
+
+def render_scenes_tab(result: WorkflowResult, graph: StoryGraph):
     if not graph.scenes:
         st.info("暂无场景数据")
         return
 
+    st.subheader(f"共 {len(graph.scenes)} 个场景")
+
     for s in graph.scenes:
         with st.expander(f"**{s.title}** — 第{s.act}幕", expanded=False):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.text(f"地点: {s.location}")
-                st.text(f"时间: {s.time}")
-            with col2:
-                st.text(f"角色: {', '.join(s.characters_present)}")
-                st.text(f"事件数: {len(s.event_ids)}")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.text(f"地点: {s.location or '未标注'}")
+                st.text(f"时间: {s.time or '未标注'}")
+            with c2:
+                st.text(f"角色: {', '.join(s.characters_present) if s.characters_present else '无'}")
+                st.text(f"关联事件: {len(s.event_ids)}")
             if s.summary:
                 st.text(f"概要: {s.summary}")
 
+            # Show script if available
             if s.id in graph.scripts:
                 st.divider()
-                st.subheader("剧本内容")
+                st.markdown("**剧本内容**")
                 script = graph.scripts[s.id]
                 for item in script.content:
                     if item.type == "action":
@@ -325,8 +448,136 @@ def render_scenes_tab(graph: StoryGraph):
                         st.text(f"**{item.character}**: {item.text}")
 
 
+# ── Tab: Outline ──────────────────────────────────────────────────────────────
+
+
+def render_outline_tab(result: WorkflowResult):
+    if not result or not result.global_skl:
+        st.info("暂无大纲数据")
+        return
+
+    gsk = result.global_skl
+    outline = gsk.outline
+
+    if not outline:
+        st.info("未生成大纲")
+        return
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.metric("题材", outline.get("genre", "未知"))
+    with c2:
+        st.metric("主线冲突", outline.get("main_conflict", "未知")[:30] + ("..." if len(outline.get("main_conflict", "")) > 30 else ""))
+
+    if outline.get("theme"):
+        st.subheader("主题")
+        st.text(outline["theme"])
+
+    if outline.get("arc_summary"):
+        st.subheader("角色弧光")
+        st.text(outline["arc_summary"])
+
+    acts = outline.get("act_summaries", [])
+    if acts:
+        st.subheader("三幕结构")
+        for act in acts:
+            act_num = act.get("act_number", "?")
+            act_title = act.get("title", f"第{act_num}幕")
+            with st.expander(f"**第{act_num}幕: {act_title}**", expanded=False):
+                st.text(act.get("summary", ""))
+                scenes = act.get("key_scenes", [])
+                if scenes:
+                    st.text("关键场景:")
+                    for s in scenes:
+                        st.text(f"  • {s}")
+
+    key_points = outline.get("key_plot_points", [])
+    if key_points:
+        st.subheader("关键情节点")
+        for i, pt in enumerate(key_points, 1):
+            st.text(f"{i}. {pt}")
+
+
+# ── Tab: Timeline ─────────────────────────────────────────────────────────────
+
+
+def render_timeline_tab(result: WorkflowResult):
+    if not result or not result.global_skl:
+        st.info("暂无时间线数据")
+        return
+
+    gsk = result.global_skl
+    timeline = gsk.timeline
+
+    if not timeline:
+        st.info("暂无时间线数据")
+        return
+
+    st.subheader(f"共 {len(timeline)} 个时间线条目")
+
+    time_icons = {
+        "黎明": "🌅", "凌晨": "🌙", "清晨": "🌅", "早晨": "🌅",
+        "上午": "☀️", "中午": "☀️", "午间": "☀️", "午后": "🌤️",
+        "下午": "🌤️", "傍晚": "🌆", "黄昏": "🌆", "晚上": "🌙",
+        "夜里": "🌙", "深夜": "🌙", "午夜": "🌙",
+        "未标注": "❓",
+    }
+
+    for entry in timeline:
+        icon = time_icons.get(entry.time_marker, "⏰")
+        with st.expander(f"{icon} **{entry.time_marker}** — {entry.event_title}", expanded=False):
+            c1, c2 = st.columns(2)
+            with c1:
+                st.text(f"地点: {entry.location or '未标注'}")
+                st.text(f"章节: {entry.chapter_title or '未知'}")
+            with c2:
+                st.text(f"类型: {entry.event_type}")
+                st.text(f"参与者: {', '.join(entry.participants) if entry.participants else '无'}")
+
+            if entry.causal_predecessors:
+                st.text(f"前序事件: {', '.join(entry.causal_predecessors)}")
+            if entry.causal_successors:
+                st.text(f"后续事件: {', '.join(entry.causal_successors)}")
+
+
+# ── Tab: Locations ─────────────────────────────────────────────────────────────
+
+
+def render_locations_tab(result: WorkflowResult):
+    if not result or not result.global_skl:
+        st.info("暂无地点数据")
+        return
+
+    gsk = result.global_skl
+    locations = gsk.locations
+
+    if not locations:
+        st.info("暂无地点数据")
+        return
+
+    st.subheader(f"共 {len(locations)} 个地点")
+
+    type_icons = {"indoor": "🏠", "outdoor": "🌍", "mixed": "🔀"}
+    type_labels = {"indoor": "室内", "outdoor": "室外", "mixed": "混合"}
+
+    for loc in locations:
+        icon = type_icons.get(loc.location_type, "📍")
+        label = type_labels.get(loc.location_type, loc.location_type)
+        with st.expander(f"{icon} **{loc.name}** ({label}) × {loc.frequency}", expanded=False):
+            st.text(f"类型: {label} ({loc.location_type})")
+            st.text(f"出现频次: {loc.frequency}")
+            if loc.scenes:
+                st.text(f"关联场景: {', '.join(loc.scenes)}")
+            if loc.narrative_significance:
+                st.text(f"叙事意义: {loc.narrative_significance}")
+            if loc.emotional_atmosphere:
+                st.text(f"情感氛围: {loc.emotional_atmosphere}")
+
+
+# ── Tab: Warnings ──────────────────────────────────────────────────────────────
+
+
 def render_warnings_tab(graph: StoryGraph):
-    """渲染警告标签页."""
     if not graph.warnings:
         st.success("✅ 未发现一致性问题")
         return
@@ -335,18 +586,18 @@ def render_warnings_tab(graph: StoryGraph):
     warnings = [w for w in graph.warnings if w.severity.value == "warning"]
     infos = [w for w in graph.warnings if w.severity.value == "info"]
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
+    c1, c2, c3 = st.columns(3)
+    with c1:
         st.metric("错误", len(errors), delta_color="inverse")
-    with col2:
+    with c2:
         st.metric("警告", len(warnings), delta_color="off")
-    with col3:
+    with c3:
         st.metric("提示", len(infos), delta_color="off")
 
     st.divider()
 
     if errors:
-        st.error("错误")
+        st.error("错误 — 必须修复")
         for w in errors:
             with st.expander(f"**{w.code.value}**: {w.message}", expanded=True):
                 if w.scene_ids:
@@ -355,7 +606,7 @@ def render_warnings_tab(graph: StoryGraph):
                     st.text(f"涉及角色: {', '.join(w.characters_involved)}")
 
     if warnings:
-        st.warning("警告")
+        st.warning("警告 — 建议检查")
         for w in warnings:
             with st.expander(f"**{w.code.value}**: {w.message}", expanded=True):
                 if w.scene_ids:
@@ -369,42 +620,43 @@ def render_warnings_tab(graph: StoryGraph):
             st.text(f"- **{w.code.value}**: {w.message}")
 
 
-def render_governance_tab(result):
-    """渲染知识治理标签页 — 展示治理报告，支持用户修正."""
+# ── Tab: Governance ────────────────────────────────────────────────────────────
+
+
+def render_governance_tab(result: WorkflowResult):
     st.subheader("🛡️ 知识治理报告")
 
-    if result is None or result.governance_report is None:
+    if not result or not result.governance_report:
         st.info("请先运行工作流以获取治理报告")
         return
 
     report = result.governance_report
 
-    # ── 概览指标 ───────────────────────────────────────────
     val_passed = "✅ PASSED" if report.validation.passed else "❌ FAILED"
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
         st.metric("验证状态", val_passed)
-    with col2:
+    with c2:
         st.metric("冲突数", len(report.conflicts))
-    with col3:
+    with c3:
         st.metric("自动修正", len(report.auto_corrections))
-    with col4:
+    with c4:
         st.metric("审计记录", len(report.audit_trail.entries))
 
     st.divider()
 
-    # ── 验证问题 ───────────────────────────────────────────
+    # Validation issues
     st.subheader("📋 验证问题")
     if not report.validation.issues:
         st.success("✅ 无验证问题")
     else:
         for issue in report.validation.issues:
-            sev_icon = "🔴" if issue.severity == "error" else "🟡" if issue.severity == "warning" else "ℹ️"
-            st.text(f"{sev_icon} [{issue.severity.upper()}] {issue.code}: {issue.message}")
+            icon = "🔴" if issue.severity == "error" else "🟡" if issue.severity == "warning" else "ℹ️"
+            st.text(f"{icon} [{issue.severity.upper()}] {issue.code}: {issue.message}")
 
     st.divider()
 
-    # ── 冲突列表 ───────────────────────────────────────────
+    # Conflicts
     st.subheader("⚔️ 冲突列表")
     if not report.conflicts:
         st.success("✅ 未检测到冲突")
@@ -412,16 +664,16 @@ def render_governance_tab(result):
         for i, conflict in enumerate(report.conflicts, 1):
             with st.expander(f"**冲突 {i}**: {conflict.conflict_type}", expanded=False):
                 st.text(f"类型: {conflict.conflict_type}")
-                st.text(f"Entity A: {conflict.entity_a}")
-                st.text(f"Entity B: {conflict.entity_b}")
+                st.text(f"实体A: {conflict.entity_a}")
+                st.text(f"实体B: {conflict.entity_b}")
                 st.text(f"仲裁策略: {conflict.resolution or '未仲裁'}")
                 if conflict.resolved_value:
                     st.text(f"仲裁结果: {conflict.resolved_value}")
 
     st.divider()
 
-    # ── 自动修正记录 ───────────────────────────────────────
-    st.subheader("🔧 自动修正")
+    # Auto corrections
+    st.subheader("🔧 自动修正记录")
     if not report.auto_corrections:
         st.info("无自动修正记录")
     else:
@@ -430,36 +682,45 @@ def render_governance_tab(result):
 
     st.divider()
 
-    # ── 快速修正 ───────────────────────────────────────────
+    # Quick patch
     st.subheader("✏️ 快速修正")
-    with st.expander("添加角色修正", expanded=False):
-        target_name = st.selectbox(
-            "角色",
-            [""] + [c.name for c in (result.global_skl.characters if result.global_skl else [])],
-        )
-        field = st.selectbox("字段", ["name", "description", "role"])
-        new_val = st.text_input("新值")
-        reason = st.text_input("原因", placeholder="例如：用户确认")
-        if st.button("应用", type="primary") and target_name and result:
-            governor = KnowledgeGovernor(result.global_skl, graph=result.graph)
-            old_val = ""
-            for c in result.global_skl.characters:
-                if c.name == target_name:
-                    old_val = getattr(c, field, "")
-                    break
-            patch = Patch("character", target_name, field, old_val, new_val, reason or "用户修正")
-            if governor.apply_patch(patch):
-                st.success(f"已修正 '{target_name}.{field}' = '{new_val}'")
-                st.rerun()
-            else:
-                st.error("修正失败")
+    if not result.global_skl:
+        st.info("无 SKL 数据")
+    else:
+        with st.expander("添加角色修正", expanded=False):
+            target_name = st.selectbox(
+                "角色",
+                [""] + [c.name for c in result.global_skl.characters],
+            )
+            if target_name:
+                c1, c2 = st.columns(2)
+                with c1:
+                    field = st.selectbox("字段", ["name", "role", "description"])
+                with c2:
+                    new_val = st.text_input("新值")
+                reason = st.text_input("原因", placeholder="例如：用户确认")
+                if st.button("应用", type="primary"):
+                    governor = KnowledgeGovernor(result.global_skl, graph=result.graph)
+                    old_val = ""
+                    for c in result.global_skl.characters:
+                        if c.name == target_name:
+                            old_val = getattr(c, field, "")
+                            break
+                    patch = Patch("character", target_name, field, old_val, new_val, reason or "用户修正")
+                    if governor.apply_patch(patch):
+                        st.success(f"已修正 「{target_name}.{field}」 = 「{new_val}」")
+                        st.rerun()
+                    else:
+                        st.error("修正失败")
 
 
-def render_audit_tab(result):
-    """渲染变更审计标签页 — 展示 AuditTrail 历史."""
+# ── Tab: Audit Trail ──────────────────────────────────────────────────────────
+
+
+def render_audit_tab(result: WorkflowResult):
     st.subheader("📝 变更审计记录")
 
-    if result is None or result.governance_report is None:
+    if not result or not result.governance_report:
         st.info("请先运行工作流以获取审计记录")
         return
 
@@ -470,57 +731,323 @@ def render_audit_tab(result):
         st.info("暂无审计记录")
         return
 
-    col1, col2 = st.columns([1, 4])
-    with col1:
+    c1, c2 = st.columns(2)
+    with c1:
         st.metric("记录总数", len(entries))
-    with col2:
-        st.metric("最近更新", entries[-1].timestamp if entries else "-")
+    with c2:
+        st.metric("最近更新", entries[-1].timestamp[:19] if entries else "-")
 
     st.divider()
 
-    # Action 统计
     from collections import Counter
     action_counts = Counter(e.action for e in entries)
     st.caption("操作类型分布: " + " | ".join(f"{k}: {v}" for k, v in action_counts.items()))
 
     st.divider()
 
-    # 完整历史
-    for i, entry in enumerate(reversed(entries)):
-        action_icon = {
-            "patch": "✏️", "auto_correct": "🔧", "resolve_conflict": "⚔️",
-            "rollback": "↩️",
-        }.get(entry.action, "📝")
+    action_icons = {
+        "patch": "✏️", "auto_correct": "🔧", "resolve_conflict": "⚔️", "rollback": "↩️",
+    }
 
+    for i, entry in enumerate(reversed(entries)):
+        icon = action_icons.get(entry.action, "📝")
         with st.expander(
-            f"{action_icon} [{entry.action}] {entry.target_type} / {entry.target_id} — {entry.timestamp[:19]}",
+            f"{icon} [{entry.action}] {entry.target_type} / {entry.target_id} — {entry.timestamp[:19]}",
             expanded=False,
         ):
             if entry.reason:
                 st.text(f"原因: {entry.reason}")
             if entry.user:
                 st.text(f"用户: {entry.user}")
-            col1, col2 = st.columns(2)
-            with col1:
+            c1, c2 = st.columns(2)
+            with c1:
                 st.text(f"修改前: {entry.before}")
-            with col2:
+            with c2:
                 st.text(f"修改后: {entry.after}")
 
 
+# ── Tab: Screenplay Editor ─────────────────────────────────────────────────────
+
+
+def render_screenplay_tab(result: WorkflowResult, graph: StoryGraph):
+    st.subheader("🎬 剧本编辑")
+
+    if not result or not result.global_skl:
+        st.info("请先生成剧本")
+        return
+
+    gsk = result.global_skl
+    scripts = graph.scripts
+
+    if not scripts:
+        st.info("暂无剧本数据")
+        return
+
+    st.markdown(f"已生成 **{len(scripts)}** 个场景的剧本，共 **{sum(len(s.content) for s in scripts.values())}** 条记录")
+    st.markdown("直接在下方编辑剧本内容，修改后点击「💾 保存修改」后可在 YAML 导出中看到更新。")
+
+    # Initialize edited_scripts from current graph
+    if "edited_scripts" not in st.session_state or not st.session_state["edited_scripts"]:
+        st.session_state["edited_scripts"] = {
+            sid: [
+                {"type": item.type, "text": item.text, "character": item.character}
+                for item in script.content
+            ]
+            for sid, script in scripts.items()
+        }
+
+    # Scene selector
+    scene_ids = list(scripts.keys())
+    selected_scene = st.selectbox("选择场景", scene_ids)
+
+    if selected_scene:
+        script_node = scripts[selected_scene]
+        edited = st.session_state["edited_scripts"].get(selected_scene, [])
+
+        st.divider()
+        st.markdown(f"**场景: {script_node.id}**")
+
+        # Editable script items
+        new_edited = []
+        for idx, item in enumerate(edited):
+            item_type = item.get("type", "action")
+            col_label, col_text = st.columns([1, 4])
+            with col_label:
+                st.text(f"[{item_type}]")
+            with col_text:
+                if item_type == "dialogue":
+                    char_col, text_col = st.columns([1, 3])
+                    with char_col:
+                        new_char = st.text_input(
+                            "角色", value=item.get("character", ""),
+                            key=f"char_{selected_scene}_{idx}",
+                            label_visibility="collapsed",
+                        )
+                    with text_col:
+                        new_text = st.text_area(
+                            "台词", value=item.get("text", ""),
+                            key=f"text_{selected_scene}_{idx}",
+                            height=60, label_visibility="collapsed",
+                        )
+                else:
+                    new_text = st.text_area(
+                        "动作", value=item.get("text", ""),
+                        key=f"text_{selected_scene}_{idx}",
+                        height=60, label_visibility="collapsed",
+                    )
+                    new_char = item.get("character", "")
+                new_edited.append({"type": item_type, "text": new_text, "character": new_char})
+
+        st.session_state["edited_scripts"][selected_scene] = new_edited
+
+        # Save changes button
+        if st.button("💾 保存修改", type="primary"):
+            # Apply edits to graph in memory
+            from core.story_graph import ScriptNode, ScriptItem
+            updated_items = []
+            for item_dict in new_edited:
+                updated_items.append(ScriptItem(
+                    type=item_dict["type"],
+                    text=item_dict["text"],
+                    character=item_dict.get("character", ""),
+                ))
+            graph.scripts[selected_scene] = ScriptNode(id=selected_scene, content=updated_items)
+            st.success(f"已保存「{selected_scene}」的修改")
+            st.rerun()
+
+        # Add new item
+        st.divider()
+        with st.expander("➕ 添加剧本条目", expanded=False):
+            new_type = st.selectbox("类型", ["action", "dialogue"], key="new_type")
+            new_text_val = st.text_input("内容", key="new_text")
+            new_char_val = st.text_input("角色（dialogue 必填）", key="new_char", disabled=(new_type == "action"))
+            if st.button("添加到场景", type="secondary"):
+                new_item = {"type": new_type, "text": new_text_val, "character": new_char_val if new_type == "dialogue" else ""}
+                st.session_state["edited_scripts"][selected_scene].append(new_item)
+                st.rerun()
+
+        # Delete last item
+        if st.button("🗑️ 删除最后一条"):
+            if st.session_state["edited_scripts"][selected_scene]:
+                st.session_state["edited_scripts"][selected_scene].pop()
+                st.rerun()
+
+
+# ── Tab: YAML Export ──────────────────────────────────────────────────────────
+
+
+def render_yaml_tab(result: WorkflowResult, graph: StoryGraph):
+    st.subheader("📄 YAML 导出与预览")
+
+    # Live YAML preview
+    yaml_output = graph.to_yaml()
+    st.session_state["yaml_output"] = yaml_output
+
+    # Edit in YAML mode
+    st.markdown("**YAML 源码（可直接编辑）**")
+    edited_yaml = st.text_area(
+        "YAML 内容",
+        value=yaml_output,
+        height=400,
+        label_visibility="collapsed",
+        key="yaml_editor",
+    )
+
+    # Reload from edited YAML
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        if st.button("🔄 从 YAML 重新加载", use_container_width=True):
+            try:
+                data = yaml.safe_load(edited_yaml)
+                _apply_yaml_to_graph(data, graph)
+                st.success("已从 YAML 重新加载")
+                st.rerun()
+            except Exception as e:
+                st.error(f"解析失败：{e}")
+
+    with c2:
+        # Download YAML
+        st.download_button(
+            "📥 下载 YAML",
+            data=edited_yaml,
+            file_name=f"{graph.metadata.get('title', 'story')}.yaml",
+            mime="text/yaml",
+            use_container_width=True,
+        )
+
+    with c3:
+        # Copy to clipboard
+        st.code(edited_yaml[:200] + ("..." if len(edited_yaml) > 200 else ""), language="yaml")
+
+    with c4:
+        st.caption(f"YAML 长度: {len(edited_yaml)} 字符")
+
+
+# ── YAML Import/Export Helpers ─────────────────────────────────────────────────
+
+
+def _apply_yaml_to_graph(data: dict, graph: StoryGraph):
+    """Apply YAML data back to StoryGraph (basic field update)."""
+    sg = data.get("story_graph", data)
+
+    # Update metadata
+    if "metadata" in sg:
+        graph.metadata.update(sg["metadata"])
+
+    # Update warnings
+    if "warnings" in sg:
+        from core.story_graph import WarningNode, WarningCode, WarningSeverity
+        graph.warnings = []
+        for w in sg["warnings"]:
+            code_str = w.get("code", "INFO")
+            try:
+                code = WarningCode[code_str]
+            except Exception:
+                code = WarningCode.INFO
+            sev_str = w.get("severity", "info")
+            try:
+                sev = WarningSeverity[sev_str.upper()]
+            except Exception:
+                sev = WarningSeverity.INFO
+            graph.warnings.append(WarningNode(
+                code=code,
+                message=w.get("message", ""),
+                severity=sev,
+                scene_ids=w.get("scene_ids", []),
+                characters_involved=w.get("characters_involved", []),
+            ))
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+
 def main():
-    """主函数."""
     init_session_state()
     render_header()
-    api_key, model, run_check = render_sidebar()
-    novel_text, title, author = render_upload_section()
+    api_key, model, run_check, run_governance = render_sidebar()
+    novel_text, title, author, yaml_data = render_upload_section()
 
-    result, workflow = render_workflow_run(novel_text, title, author, api_key, model, run_check)
+    # Handle YAML import
+    if yaml_data is not None:
+        from core.story_graph import StoryGraph
+        graph = StoryGraph()
+        _apply_yaml_to_graph(yaml_data, graph)
+        st.session_state["workflow_result"] = None
+        st.session_state["graph_imported"] = graph
+        st.info("YAML 已导入，可在「YAML 导出」标签页中查看和继续编辑")
+
+    result, workflow = render_workflow_buttons(
+        novel_text, title, author, api_key, model, run_check,
+    )
 
     if result is not None:
         st.session_state["workflow_result"] = result
-        st.session_state["graph"] = result.graph
 
-    render_results(st.session_state.get("workflow_result"))
+    # Render results
+    current_result = st.session_state.get("workflow_result")
+
+    if not current_result:
+        # Show imported graph if any
+        imported = st.session_state.get("graph_imported")
+        if imported:
+            render_summary_from_graph(imported)
+        else:
+            st.info("👆 请上传小说文本并点击按钮开始转换")
+        return
+
+    render_summary(current_result)
+
+    graph = current_result.graph
+    gsk = current_result.global_skl
+
+    # Tab layout
+    tabs = [
+        "📋 元信息", "👥 角色", "🔗 关系", "🎭 事件",
+        "🎬 场景", "📝 大纲", "⏱️ 时间线", "📍 地点",
+        "⚠️ 警告", "🛡️ 治理", "📝 审计",
+        "🎬 剧本编辑", "📄 YAML 导出",
+    ]
+
+    tab_objects = st.tabs(tabs)
+
+    with tab_objects[0]:
+        render_metadata_tab(graph)
+    with tab_objects[1]:
+        render_characters_tab(current_result, graph, gsk)
+    with tab_objects[2]:
+        render_relations_tab(current_result, graph)
+    with tab_objects[3]:
+        render_events_tab(current_result, graph)
+    with tab_objects[4]:
+        render_scenes_tab(current_result, graph)
+    with tab_objects[5]:
+        render_outline_tab(current_result)
+    with tab_objects[6]:
+        render_timeline_tab(current_result)
+    with tab_objects[7]:
+        render_locations_tab(current_result)
+    with tab_objects[8]:
+        render_warnings_tab(graph)
+    with tab_objects[9]:
+        render_governance_tab(current_result)
+    with tab_objects[10]:
+        render_audit_tab(current_result)
+    with tab_objects[11]:
+        render_screenplay_tab(current_result, graph)
+    with tab_objects[12]:
+        render_yaml_tab(current_result, graph)
+
+
+def render_summary_from_graph(graph: StoryGraph):
+    """Render a minimal summary when only a YAML was imported."""
+    meta = graph.metadata
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("标题", meta.get("title", "未命名"))
+    with c2:
+        st.metric("角色", len(graph.characters))
+    with c3:
+        st.metric("场景", len(graph.scenes))
 
 
 if __name__ == "__main__":
