@@ -1,5 +1,11 @@
-"""ScriptAgent — converts story knowledge (SKL) into structured screenplay YAML."""
-from typing import Optional
+"""ScriptAgent — converts story knowledge (SKL) into structured screenplay YAML.
+
+Implements think.md Principle VIII: Retrieval Before Generation.
+All scenes are generated in parallel using asyncio.to_thread().
+"""
+import asyncio
+import logging
+from typing import Optional, TYPE_CHECKING
 
 from core.llm_client import LLMClient
 from core.prompts import (
@@ -10,10 +16,15 @@ from core.prompts import (
 )
 from core.story_graph import ScriptNode, ScriptItem
 
+if TYPE_CHECKING:
+    from agent.director_agent import ScreenplayBible
+
 try:
     from core.progress import ProgressTracker
 except ImportError:
     ProgressTracker = None
+
+logger = logging.getLogger(__name__)
 
 
 def filter_relevant_context(
@@ -108,10 +119,51 @@ class ScriptAgent:
         characters_present: list[str],
         scene_summary: str,
         skl_context: dict,
+        bible: "ScreenplayBible | None" = None,
     ) -> ScriptNode:
-        """Generate screenplay content for a single scene using filtered SKL context."""
-        if self.llm is None:
-            return ScriptNode(id=scene_title, content=[])
+        """Generate screenplay for a single scene using filtered SKL context + Bible."""
+        return self._write_scene_sync(
+            scene_title=scene_title,
+            scene_location=scene_location,
+            scene_time=scene_time,
+            characters_present=characters_present,
+            scene_summary=scene_summary,
+            skl_context=skl_context,
+            bible=bible,
+        )
+
+    async def _write_one_scene(
+        self, idx: int, scene: dict, skl_context: dict,
+        bible: "ScreenplayBible | None" = None,
+    ) -> tuple[int, str, "ScriptNode | Exception"]:
+        """Write a single scene's screenplay (called in parallel)."""
+        scene_id = scene.get("id", scene.get("title", f"scene_{idx}"))
+        try:
+            script_node = self._write_scene_sync(
+                scene_title=scene.get("title", ""),
+                scene_location=scene.get("location", ""),
+                scene_time=scene.get("time", ""),
+                characters_present=scene.get("characters_present", []),
+                scene_summary=scene.get("summary", ""),
+                skl_context=skl_context,
+                bible=bible,
+            )
+            return idx, scene_id, script_node
+        except Exception as e:
+            logger.warning("场景剧本生成失败 [%s]: %s", scene_id, e)
+            return idx, scene_id, e
+
+    def _write_scene_sync(
+        self,
+        scene_title: str,
+        scene_location: str,
+        scene_time: str,
+        characters_present: list[str],
+        scene_summary: str,
+        skl_context: dict,
+        bible: "ScreenplayBible | None" = None,
+    ) -> ScriptNode:
+        """Synchronous scene writing (called in a thread by asyncio.to_thread)."""
         char_lines = []
         for c in skl_context.get("characters", []):
             name = c.get("name", "")
@@ -121,17 +173,18 @@ class ScriptAgent:
                 role = c.get("role", "supporting")
                 char_lines.append(f"- {name} ({role}): {desc} | Traits: {traits}")
 
-        # Build event context
         event_lines = []
         for e in skl_context.get("events", []):
             event_lines.append(f"- [{e.get('event_type', '')}] {e.get('title', '')}: {e.get('description', '')}")
 
-        # Build relation context
         rel_lines = []
         for r in skl_context.get("relations", []):
             fc, tc = r.get("from_char", ""), r.get("to_char", "")
             if fc in characters_present or tc in characters_present:
                 rel_lines.append(f"- {fc} --[{r.get('relation_type', '')}]--> {tc}: {r.get('description', '')}")
+
+        # Build Bible context section
+        bible_section = self._build_bible_section(bible) if bible else ""
 
         user_prompt = f"""Scene: {scene_title}
 Location: {scene_location}
@@ -149,7 +202,9 @@ Related events:
 Relevant relationships:
 {chr(10).join(rel_lines) if rel_lines else "(no relevant relationships)"}
 
-Story outline: {skl_context.get('outline', {}).get('main_conflict', 'Unknown conflict')}"""
+Story outline: {skl_context.get('outline', {}).get('main_conflict', 'Unknown conflict')}
+
+{bible_section}"""
 
         response = self.llm.generate_json(
             SYSTEM_PROMPT + "\n\n" + SCENE_SCREENPLAY_PROMPT,
@@ -169,30 +224,103 @@ Story outline: {skl_context.get('outline', {}).get('main_conflict', 'Unknown con
             ))
         return script_node
 
+    def _build_bible_section(self, bible: "ScreenplayBible") -> str:
+        """Build the Bible context section for the prompt."""
+        sections = ["# Screenplay Bible"]
+
+        if bible.genre:
+            sections.append(f"Genre: {bible.genre}")
+        if bible.subgenre:
+            sections.append(f"Subgenre: {bible.subgenre}")
+        if bible.tone:
+            sections.append(f"Tone: {bible.tone}")
+        if bible.visual_style:
+            sections.append(f"Visual Style: {bible.visual_style}")
+        if bible.setting_period:
+            sections.append(f"Setting/Period: {bible.setting_period}")
+        if bible.atmosphere:
+            sections.append(f"Atmosphere: {', '.join(bible.atmosphere)}")
+
+        if bible.themes:
+            sections.append(f"Themes: {', '.join(bible.themes)}")
+        if bible.motifs:
+            sections.append(f"Motifs: {', '.join(bible.motifs)}")
+
+        if bible.character_portraits:
+            sections.append("\nCharacter Portraits:")
+            for p in bible.character_portraits:
+                sections.append(f"- {p.get('name', '')}: {p.get('psychology', '')}")
+                if p.get('speech_pattern'):
+                    sections.append(f"  Speech: {p.get('speech_pattern')}")
+
+        if bible.act_breakdown:
+            sections.append(f"\nAct Structure:")
+            for act, desc in bible.act_breakdown.items():
+                sections.append(f"  {act}: {desc}")
+
+        if bible.dialogue_style:
+            sections.append(f"\nDialogue Style: {bible.dialogue_style}")
+        if bible.pacing_notes:
+            sections.append(f"Pacing: {bible.pacing_notes}")
+
+        return "\n".join(sections)
+
+    async def write_all_scenes_async(
+        self,
+        scenes: list[dict],
+        skl_context: dict,
+        tracker: Optional["ProgressTracker"] = None,
+        bible: "ScreenplayBible | None" = None,
+    ) -> dict[str, ScriptNode]:
+        """Generate screenplay for all scenes concurrently.
+
+        Uses asyncio.gather() to run all scene generation in parallel,
+        reducing wall-clock time from O(n) to O(1) for the script phase.
+        Each scene still uses exactly 1 LLM call.
+        """
+        if not scenes:
+            return {}
+
+        tasks = [
+            self._write_one_scene(idx, scene, skl_context, bible)
+            for idx, scene in enumerate(scenes)
+        ]
+
+        results_raw = await asyncio.gather(*tasks)
+
+        results: dict[str, ScriptNode] = {}
+        failed = 0
+        succeeded = 0
+
+        # Sort by index to maintain scene order
+        results_raw.sort(key=lambda x: x[0])
+
+        for idx, scene_id, result in results_raw:
+            if isinstance(result, Exception):
+                results[scene_id] = ScriptNode(id=scene_id, content=[])
+                failed += 1
+            else:
+                results[scene_id] = result
+                succeeded += 1
+
+            if tracker:
+                tracker.on_scene_start(idx + 1, scene_id)
+                tracker.on_scene_done(idx + 1, scene_id)
+
+        if failed > 0:
+            logger.warning(
+                "剧本生成完成: 成功 %d, 失败 %d (失败的场景已返回空剧本)",
+                succeeded, failed,
+            )
+
+        return results
+
     def write_all_scenes(
         self,
         scenes: list[dict],
         skl_context: dict,
         tracker: Optional["ProgressTracker"] = None,
+        bible: "ScreenplayBible | None" = None,
     ) -> dict[str, ScriptNode]:
-        """Generate screenplay for all scenes, returns scene_id -> ScriptNode."""
-        results = {}
-        for idx, scene in enumerate(scenes):
-            scene_id = scene.get("id", scene.get("title", f"scene_{len(results)}"))
-            if tracker:
-                tracker.on_scene_start(idx + 1, scene_id)
-            try:
-                script_node = self.write_scene(
-                    scene_title=scene.get("title", ""),
-                    scene_location=scene.get("location", ""),
-                    scene_time=scene.get("time", ""),
-                    characters_present=scene.get("characters_present", []),
-                    scene_summary=scene.get("summary", ""),
-                    skl_context=skl_context,
-                )
-            except Exception as e:
-                script_node = ScriptNode(id=scene_id, content=[])
-            results[scene_id] = script_node
-            if tracker:
-                tracker.on_scene_done(idx + 1, scene_id)
-        return results
+        """Synchronous wrapper — calls the async parallel implementation."""
+        return asyncio.run(self.write_all_scenes_async(scenes, skl_context, tracker, bible))

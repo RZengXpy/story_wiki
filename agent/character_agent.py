@@ -1,64 +1,29 @@
-"""Character Agent — character knowledge extraction + governance.
-
-Provides two sets of capabilities:
-  1. Extraction: extract characters from raw text (used by legacy single-agent mode)
-  2. Governance: deduplicate, merge aliases, identify protagonists,
-     manage character roles within a GlobalStoryKnowledge (SKL).
+"""Character Agent — character knowledge governance.
 
 Implements think.md Principle IV: "Agent 负责治理而非抽取"
-The extraction step has been replaced by UnifiedExtractionAgent.
-These governance methods operate on the pre-built SKL.
+All governance methods operate on the pre-built SKL (no extraction).
+
+Governance capabilities:
+  - deduplicate: remove duplicate characters by name
+  - merge_aliases: merge same-person characters with different names
+  - identify_protagonist: find the main character by appearance frequency
+  - assign_roles: auto-assign protagonist/antagonist/supporting roles
 """
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 
-from core.llm_client import LLMClient
-from core.prompts import SYSTEM_PROMPT, CHARACTER_EXTRACTION_PROMPT
-from schema.models import Character, SourceTrace
+from schema.models import Character
 
 if TYPE_CHECKING:
     from core.knowledge_merger import GlobalStoryKnowledge
 
 
 class CharacterAgent:
-    """Character extraction and governance agent."""
+    """Character governance agent — operates on SKL, not raw text."""
 
-    def __init__(self, llm_client: Optional[LLMClient] = None):
-        self.llm = llm_client
-
-    # ── Extraction (legacy single-agent mode) ─────────────────────────────
-
-    def extract_from_text(self, story_text: str) -> list[Character]:
-        """Extract characters from raw text (legacy extraction, one LLM call)."""
-        response = self.llm.generate_json(
-            SYSTEM_PROMPT + "\n\n" + CHARACTER_EXTRACTION_PROMPT,
-            story_text,
-        )
-        characters = []
-        for data in response.get("characters", []):
-            characters.append(Character(
-                name=data["name"],
-                description=data.get("description", ""),
-                traits=data.get("traits", []),
-                role=data.get("role", "supporting"),
-            ))
-        return characters
-
-    def extract_from_chapters(self, chapters: list, llm: LLMClient) -> list[Character]:
-        """Extract characters chapter-by-chapter, each tagged with source."""
-        all_chars = []
-        for ch in chapters:
-            if hasattr(ch, "content") and ch.content.strip():
-                chars = self.extract_from_text(ch.content)
-                for c in chars:
-                    c.source = SourceTrace(
-                        chapter_id=ch.id,
-                        chapter_title=ch.title,
-                        char_range=(ch.start_char, ch.end_char),
-                    )
-                all_chars.extend(chars)
-        return all_chars
+    def __init__(self, llm_client=None):
+        pass  # Governance methods don't need LLM
 
     # ── Governance (think.md Principle IV) ────────────────────────────────
 

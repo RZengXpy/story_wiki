@@ -351,23 +351,52 @@ def test_event_agent_filter_key_events():
     print("  PASS: event_agent_filter_key_events")
 
 
-# ── Backward Compatibility ──────────────────────────────────────────────────────
+# ── Director Agent ──────────────────────────────────────────────────────────────
 
-def test_char_agent_legacy_extraction():
-    """CharacterAgent still supports legacy extraction methods for backward compat."""
-    agent = CharacterAgent()
-    # Just verify the methods exist and are callable
-    assert callable(getattr(agent, "extract_from_text", None))
-    assert callable(getattr(agent, "extract_from_chapters", None))
-    print("  PASS: char_agent_legacy_extraction")
+def test_director_agent_no_llm():
+    """DirectorAgent with no LLM returns empty bible."""
+    from agent.director_agent import DirectorAgent, ScreenplayBible
+    agent = DirectorAgent()
+    bible = agent.create_bible(None)
+    assert isinstance(bible, ScreenplayBible)
+    assert bible.genre == ""
+    print("  PASS: director_agent_no_llm")
 
 
-def test_event_agent_legacy_extraction():
-    """EventAgent still supports legacy extraction methods for backward compat."""
-    agent = EventAgent()
-    assert callable(getattr(agent, "extract_events", None))
-    assert callable(getattr(agent, "extract_events_from_chapters", None))
-    print("  PASS: event_agent_legacy_extraction")
+def test_screenplay_bible_dataclass():
+    """ScreenplayBible holds all required fields."""
+    from agent.director_agent import ScreenplayBible
+    bible = ScreenplayBible(
+        genre="thriller",
+        tone="suspenseful",
+        themes=["truth", "mystery"],
+        character_portraits=[{"name": "林远", "psychology": "cautious"}],
+    )
+    assert bible.genre == "thriller"
+    assert "truth" in bible.themes
+    assert len(bible.character_portraits) == 1
+    d = bible.to_dict()
+    assert d["genre"] == "thriller"
+    assert d["tone"] == "suspenseful"
+    print("  PASS: screenplay_bible_dataclass")
+
+
+def test_build_skl_summary():
+    """_build_skl_summary produces readable text from GSK."""
+    from agent.director_agent import _build_skl_summary
+    from core.knowledge_merger import GlobalStoryKnowledge
+    from schema.models import Character
+
+    gsk = GlobalStoryKnowledge(title="测试")
+    gsk.characters = [Character(name="林远", description="图书管理员", traits=["细心"], role="protagonist")]
+    gsk.outline = {"genre": "thriller", "theme": "真相", "main_conflict": "寻找日志"}
+
+    text = _build_skl_summary(gsk)
+    assert "测试" in text
+    assert "林远" in text
+    assert "thriller" in text
+    assert "图书管理员" in text
+    print("  PASS: build_skl_summary")
 
 
 if __name__ == "__main__":
@@ -393,9 +422,10 @@ if __name__ == "__main__":
     test_event_agent_identify_key_events_empty()
     test_event_agent_filter_key_events()
 
-    print("\n── Backward Compatibility ──")
-    test_char_agent_legacy_extraction()
-    test_event_agent_legacy_extraction()
+    print("\n── Director Agent ──")
+    test_director_agent_no_llm()
+    test_screenplay_bible_dataclass()
+    test_build_skl_summary()
 
     print()
     print("ALL AGENT GOVERNANCE TESTS PASSED")

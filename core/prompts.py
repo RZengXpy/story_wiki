@@ -70,7 +70,7 @@ Identify:
 
 Return a JSON object with an "outline" object."""
 
-SCENE_SCREENPLAY_PROMPT = """Generate a screenplay for a single scene based on the following context.
+SCENE_SCREENPLAY_PROMPT = """Generate a screenplay for a single scene, guided by the Screenplay Bible.
 
 Requirements:
 - Use standard screenplay format (capitalize character names, parentheticals for action in dialogue)
@@ -83,10 +83,18 @@ Requirements:
   - text: the action description or dialogue line
   - character: (for dialogue only) the speaker's name
 
+Follow the Screenplay Bible's:
+- Genre and tone (avoid tone breaks)
+- Visual style guidelines
+- Character portraits and speech patterns
+- Dialogue style (subtext, formality level, etc.)
+- Pacing notes (slow tension vs action)
+
 Context to consider:
 - Scene location and time of day
 - Characters present and their backgrounds
 - Related events that set up this scene
 - Character relationships relevant to this scene
+- Act structure and story progression
 
 Return a JSON object with a "script" array."""
