@@ -267,6 +267,67 @@ SKL 构建（Local → Global）
 
 ---
 
+## MVP 6：接入 ScriptAgent，SKL → Screenplay
+
+### 做了什么
+
+1. **重构 ScriptAgent** (`agent/script_agent.py`)
+   - 新增 `write_scene()`：以 SKL 上下文逐场景生成剧本内容
+   - 新增 `write_all_scenes()`：批量生成所有场景的剧本
+   - 保留原有 `write_screenplay()` / `analyze_structure()` 向后兼容
+
+2. **SKL 上下文注入**
+   - 场景关联的角色信息（name / description / traits / role）
+   - 场景关联的事件（event_type / title / description）
+   - 场景关联的角色关系（from_char / to_char / relation_type / description）
+   - 故事主线冲突（main_conflict）
+
+3. **新增 Prompt**：`SCENE_SCREENPLAY_PROMPT`，要求生成标准剧本格式（action/dialogue，含 character 字段）
+
+4. **新增方法**：`StoryForgeWorkflow.run_with_scripts()`，完整 pipeline：SKL 构建 → 一致性检查 → 逐场景剧本生成
+
+5. **StoryGraph 扩展**
+   - `to_yaml()` 输出包含 `scripts` 字段
+   - `scripts`: scene_id → ScriptNode（id + content: list[ScriptItem]）
+
+6. **新增测试**：`tests/test_workflow_mvp6.py`，端到端验证剧本生成
+
+### 解决了什么问题
+
+- **剧本生成缺失**：之前 pipeline 只能提取知识，无法生成实际剧本
+- **上下文不足**：场景剧本生成时注入 SKL 上下文，保证角色/事件/关系一致性
+
+### 测试结果（text.md 雾港档案）
+
+```
+SKL: 6 chars, 18 scenes
+Scripts: 18 scene scripts generated
+Screenplay items: ~200+ (action/dialogue)
+Consistency warnings: 6
+```
+
+### 下一步
+
+- MVP 7：Retrieval，Relevant Knowledge → Scene Generation（按需检索替代全量注入）
+
+---
+
+## MVP 7：Retrieval，Relevant Knowledge → Scene Generation
+
+### 目标
+
+实现"检索增强生成"（RAG），作为作品创新点。按需检索替代全量 SKL 注入，解决上下文爆炸问题。
+
+### 实现任务
+
+- [ ] **Knowledge Retriever**：给定目标 scene_id，从 SKL 检索相关知识（同场景角色背景、相关事件、同一角色其他出场、时间线上下文）
+- [ ] **Context Injection**：将检索结果注入 `ScriptAgent` prompt，提升场景生成质量
+- [ ] **Scene Graph Construction**：构建 scene 间的关系图（时序/因果/空间），支撑跨场景检索
+- [ ] **Retrieval Evaluation**：评估检索相关性（人工评测 + 自动指标）
+- [ ] **测试**：`test_retrieval.py` 验证检索准确性和场景生成提升
+
+---
+
 ## Git 提交记录
 
 | Commit | Branch | 内容 |
