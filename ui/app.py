@@ -391,6 +391,9 @@ def render_summary(result: WorkflowResult):
 
 
 def render_metadata_tab(graph: StoryGraph):
+    if not graph:
+        st.info("暂无元数据")
+        return
     meta = graph.metadata
     c1, c2 = st.columns(2)
     with c1:
@@ -876,6 +879,9 @@ def render_locations_tab(result: WorkflowResult):
 
 
 def render_warnings_tab(graph: StoryGraph):
+    if not graph:
+        st.info("暂无警告数据")
+        return
     if not graph.warnings:
         st.success("✅ 未发现一致性问题")
         return
@@ -1350,6 +1356,8 @@ def main():
 
 def render_summary_from_graph(graph: StoryGraph):
     """Render a minimal summary when only a YAML was imported."""
+    if not graph:
+        return
     meta = graph.metadata
     c1, c2, c3 = st.columns(3)
     with c1:
