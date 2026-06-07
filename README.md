@@ -4,12 +4,14 @@
 
 ## 功能特性
 
-- **章节感知提取**：按章节粒度并行提取角色、场景、事件、关系，携带溯源信息
+- **统一知识抽取**：每章节仅 1 次 LLM 调用，一次性抽取角色/场景/事件/关系，携带 SourceTrace 溯源（符合 think.md 原则三）
+- **Agent 治理**：CharacterAgent / EventAgent 负责知识去重、别名合并、因果链构建、角色分配等治理工作（原则四）
 - **知识合并**：Local → Global 逐章合并，去重后构建 Single Source of Truth
 - **一致性检查**：4 类检查（角色冲突 / 场景不一致 / 事件矛盾 / 时间线冲突）
 - **SKL 补全**：自动构建地点聚合、时间线、角色弧光、故事大纲
 - **剧本生成**：以 SKL 为上下文逐场景生成标准格式剧本（action/dialogue）
 - **YAML 输出**：完整结构化剧本，含 characters / relations / events / scenes / scripts / warnings
+- **增量更新**：基于内容哈希的章节级缓存，仅重新抽取有变化的部分
 
 ## 快速开始
 
@@ -40,11 +42,10 @@ streamlit run ui/app.py
 
 ```bash
 # 单元测试（无需 API key）
-pytest tests/test_chapter_parser.py tests/test_knowledge_merger.py tests/test_knowledge_governance.py tests/test_incremental.py tests/test_async_pipeline.py tests/test_mvp1_2.py -v
+pytest tests/test_chapter_parser.py tests/test_knowledge_merger.py tests/test_knowledge_governance.py tests/test_incremental.py tests/test_async_pipeline.py tests/test_mvp1_2.py tests/test_unified_extraction.py tests/test_agent_governance.py -v
 
 # 集成测试（需要 API key）
-pytest tests/test_workflow.py tests/test_workflow_mvp4.py tests/test_workflow_mvp5.py tests/test_workflow_mvp6.py -v
-pytest tests/test_pipeline.py tests/test_event_agent.py -v
+pytest tests/test_workflow.py -v
 ```
 
 ## 项目结构
@@ -58,32 +59,39 @@ story_wiki/
 │   ├── workflow.py             # StoryForgeWorkflow 编排器
 │   ├── chapter_parser.py       # 章节解析
 │   ├── knowledge_merger.py     # Local → Global 知识合并
-│   └── consistency_checker.py  # 一致性检查
-├── agent/                       # 多 Agent 实现
-│   ├── character_agent.py      # 角色提取 Agent
-│   ├── scene_agent.py          # 场景解析 Agent
-│   ├── event_agent.py          # 事件提取 Agent
-│   ├── relation_agent.py       # 关系提取 Agent
-│   ├── outline_agent.py        # 大纲生成 Agent
-│   └── script_agent.py         # 剧本生成 Agent
-├── pipeline/
-│   └── orchestrator.py          # StoryPipeline 编排器
+│   ├── knowledge_governance.py  # 知识治理（冲突检测/仲裁/回写）
+│   ├── consistency_checker.py  # 一致性检查
+│   ├── incremental.py          # 章节级增量缓存
+│   ├── async_pipeline.py       # 异步并行抽取管道
+│   └── progress.py             # 进度追踪（LLM 调用计数）
+├── agent/                       # Agent 实现
+│   ├── unified_extraction_agent.py  # 统一抽取 Agent（每章 1 次 LLM）
+│   ├── character_agent.py      # 角色 Agent（抽取 + 治理）
+│   ├── scene_agent.py          # 场景 Agent
+│   ├── event_agent.py          # 事件 Agent（抽取 + 治理）
+│   ├── relation_agent.py       # 关系 Agent
+│   ├── outline_agent.py        # 大纲 Agent
+│   ├── script_agent.py         # 剧本生成 Agent
+│   ├── location_agent.py       # 地点聚合 Agent
+│   └── timeline_agent.py       # 时间线 Agent
 ├── schema/
-│   ├── models.py               # 基础数据模型
+│   ├── models.py               # 基础数据模型（Character/Scene/Event/Relation/SourceTrace 等）
 │   └── screenplay_schema.md    # YAML 剧本 Schema 定义文档
 ├── ui/
 │   └── app.py                   # Streamlit Web UI
 └── tests/
-    ├── test_chapter_parser.py   # 章节解析单元测试
-    ├── test_knowledge_merger.py # 知识合并单元测试
-    ├── test_workflow_mvp4.py   # MVP 4 集成测试
-    ├── test_workflow_mvp5.py   # MVP 5 集成测试
-    └── test_workflow_mvp6.py   # MVP 6 集成测试
+    ├── test_chapter_parser.py     # 章节解析单元测试
+    ├── test_knowledge_merger.py  # 知识合并单元测试
+    ├── test_knowledge_governance.py # 知识治理单元测试
+    ├── test_unified_extraction.py  # 统一抽取测试
+    ├── test_agent_governance.py   # Agent 治理测试
+    ├── test_async_pipeline.py      # 异步并行测试
+    └── test_workflow.py           # 端到端集成测试
 ```
 
 ## 架构概览
 
-```text
+```
 小说文本
   │
   ▼
@@ -91,10 +99,10 @@ ChapterParser ──── 章节拆分
   │
   ▼
 ┌─────────────────────────────────┐
-│  各 Agent 并行按章节提取          │
-│  CharacterAgent / SceneAgent     │
-│  EventAgent / RelationAgent     │
-│  OutlineAgent（全文）           │
+│  UnifiedExtractionAgent          │
+│  每章节 1 次 LLM 调用            │
+│  同时抽取 characters / scenes   │
+│  / events / relations + SourceTrace│
 └─────────────────────────────────┘
   │
   ▼
@@ -104,11 +112,22 @@ LocalKnowledge ──→ KnowledgeMerger.merge_all()
   │               GlobalStoryKnowledge
   │               （Single Source of Truth）
   │                        │
-  │             ┌──────────┴──────────┐
-  │             ▼                      ▼
-  │      ConsistencyChecker     派生字段构建
-  │       （4类一致性检查）    locations / timeline /
-  │                            character_arcs / outline
+  │          ┌────────────┴────────────┐
+  │          ▼                         ▼
+  │    CharacterAgent              EventAgent
+  │    · deduplicate()            · merge_events()
+  │    · merge_aliases()          · build_causal_chains()
+  │    · assign_roles()           · identify_key_events()
+  │          │                         │
+  │          └────────────┬────────────┘
+  │                       ▼
+  │              KnowledgeGovernor
+  │               govern_skl()
+  │          ┌────────────┴────────────┐
+  │          ▼                         ▼
+  │   ConsistencyChecker          派生字段构建
+  │    （4类一致性检查）   locations / timeline /
+  │                          character_arcs / outline
   │                        │
   │                        ▼
   │                  StoryGraph
@@ -126,6 +145,15 @@ LocalKnowledge ──→ KnowledgeMerger.merge_all()
   │                          to_yaml()
   │                      （含 scripts 字段）
 ```
+
+### 设计原则（think.md）
+
+- **原则一：Single Source of Truth** — GlobalStoryKnowledge 是所有模块的单一数据源
+- **原则二：知识优先，生成其次** — 知识层质量决定剧本质量
+- **原则三：统一知识抽取** — 每章节 1 次 LLM 调用，降低成本与理解偏差
+- **原则四：Agent 治理而非抽取** — Agent 负责 SKL 的去重/归一化，而非重复读取原文
+- **原则五：Local → Global** — 章节级 LocalKnowledge 逐步合并为 Global SKL
+- **原则六：可解释性** — 所有知识均携带 SourceTrace，追溯来源章节
 
 ## 输出格式
 
