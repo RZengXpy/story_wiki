@@ -227,7 +227,7 @@ LocalKnowledge ──→ KnowledgeMerger.merge_all()
 | **一致性检查** | 4 类检查（角色冲突 / 场景不一致 / 事件矛盾 / 时间线冲突） |
 | **SKL 补全** | 自动构建地点聚合、时间线、角色弧光、故事大纲 |
 | **剧本生成** | DirectorAgent 生成剧本圣经，ScriptAgent 以 SKL 为上下文逐场景并行生成标准格式剧本 |
-| **YAML 输出** | 完整结构化剧本，含 characters / relations / events / scenes / scripts / warnings |
+| **YAML 输出** | 完整结构化剧本，含 characters / relations / events / scenes / scripts / warnings，配有完整 Schema 参考文档 |
 | **历史管理** | Pipeline 结果自动持久化，支持从历史记录加载完整状态 |
 
 ---
@@ -314,7 +314,8 @@ story_wiki/
 │   └── timeline_agent.py       # 时间线 Agent
 ├── schema/
 │   ├── models.py               # 基础数据模型（Character/Scene/Event/Relation/SourceTrace 等）
-│   └── screenplay_schema.md    # YAML 剧本 Schema 定义文档
+│   ├── screenplay_schema.md    # YAML 剧本 Schema 定义文档
+│   └── PLAYWRIGHT_YAML_SCHEMA.md  # YAML Schema 参考手册（含完整类型系统、设计原因与完整性约束）
 ├── ui/
 │   └── app.py                  # Streamlit Web UI
 ├── data/                        # Pipeline 持久化存储（JSON 文件）
@@ -332,7 +333,7 @@ story_wiki/
 
 ## 输出格式
 
-完整 Schema 定义见 [`schema/screenplay_schema.md`](schema/screenplay_schema.md)。
+完整 Schema 参考见 [`schema/PLAYWRIGHT_YAML_SCHEMA.md`](schema/PLAYWRIGHT_YAML_SCHEMA.md)（含完整类型系统、每个字段的设计原因与完整性约束）。快速入门级定义见 [`schema/screenplay_schema.md`](schema/screenplay_schema.md)。
 
 ### 快速示例
 
