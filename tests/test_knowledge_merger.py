@@ -51,8 +51,24 @@ def test_global_knowledge_merge():
         Scene(title="地下室发现", location="灯塔地下室", time_of_day="evening", description="", source=src2),
     ]
 
-    local1 = LocalKnowledge("ch_001", "第一章", chars1, scenes1)
-    local2 = LocalKnowledge("ch_002", "第二章", chars2, scenes2)
+    local1 = LocalKnowledge(
+        chapter_id="ch_001",
+        chapter_title="第一章",
+        chapter_summary="林川在图书馆遇到陌生老人，老人询问北辰号航海日志。",
+        chapter_goal="林川想知道老人为什么要找北辰号日志。",
+        chapter_conflict="日志档案已经不见了，线索中断。",
+        characters=chars1,
+        scenes=scenes1,
+    )
+    local2 = LocalKnowledge(
+        chapter_id="ch_002",
+        chapter_title="第二章",
+        chapter_summary="林川和陈雨前往废弃灯塔，发现了北辰号的航海日志。",
+        chapter_goal="找到北辰号失踪的真相。",
+        chapter_conflict="神秘黑衣人出现，试图抢夺日志。",
+        characters=chars2,
+        scenes=scenes2,
+    )
 
     merger = KnowledgeMerger(title="雾港档案", author="StoryForge")
     result = merger.merge_all([local1, local2])

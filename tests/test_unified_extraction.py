@@ -252,7 +252,6 @@ def test_unified_result_integrates_with_knowledge_merger():
         all_scenes=scenes,
         all_relations=rels,
         all_events=events,
-        outline={},
     )
 
     assert len(gsk.characters) == 1

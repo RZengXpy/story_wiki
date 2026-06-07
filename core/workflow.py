@@ -1,31 +1,21 @@
 """StoryForgeWorkflow — think.md-compliant pipeline implementation.
 
-Architecture follows the 10 principles from think.md, specifically:
-
-  Principle III (Unified Knowledge Extraction):
-    Chapter → [ONE LLM call per chapter] → Local Knowledge
-    NOT: Chapter → Agent1, Agent2, Agent3, Agent4 each reading the same chapter
-
-  Principle V (Local → Global):
-    Local Knowledge → Knowledge Merger → Global SKL
-    NOT: Entire Novel → Single Prompt
-
 Pipeline stages (per think.md Standard Workflow):
-  1. Chapter Parser     → Chapter[]
-  2. Knowledge Extraction (UnifiedExtractionAgent) → Local Knowledge per chapter
-  3. Knowledge Merge    → GlobalStoryKnowledge (SKL)
-  4. Knowledge Governance (CharacterAgent, EventAgent, RelationAgent governance)
-  5. Consistency Check   → validated SKL
-  6. Story Graph        → structured graph representation
-  7. Knowledge Retrieval → scene-relevant context (for screenplay generation)
-  8. Scene Planner      → scene ordering
-  9. Script Generator   → screenplay per scene
-  10. YAML Export       → structured output
+  1. Chapter Parser       → Chapter[]
+  2. Unified Extraction   → Local Knowledge (per chapter, 1 LLM call each)
+  3. Knowledge Merge     → GlobalStoryKnowledge (SKL) + Global Outline (Rule Engine)
+  4. Knowledge Governance → validated SKL (Rule Engine)
+  5. Consistency Check   → validated SKL (Rule Engine)
+  6. Story Graph         → structured graph
+  7. Director Agent      → Screenplay Bible (1 LLM call, guided by SKL)
+  8. Script Agent        → YAML Screenplay (N scenes, parallel, guided by Bible)
+  9. YAML Export        → structured output
 
 Multi-agent pattern:
-  - Extraction: 1 agent (UnifiedExtractionAgent) — 1 LLM call per chapter
-  - Governance: 5 agents operate on SKL (deduplication, causal chains, etc.)
-  - Generation: 1 agent (ScriptAgent) — filtered retrieval before generation
+  - Extraction: UnifiedExtractionAgent — 1 LLM call per chapter
+  - Governance: Rule Engine — no LLM
+  - Bible: DirectorAgent — 1 LLM call (guided by SKL)
+  - Scenes: ScriptAgent — N parallel LLM calls (guided by SKL + Bible)
 """
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -63,7 +53,7 @@ from agent import (
     SceneAgent,
     EventAgent,
     RelationAgent,
-    OutlineAgent,
+    DirectorAgent,
     ScriptAgent,
     LocationAgent,
     TimelineAgent,
@@ -84,6 +74,7 @@ class WorkflowResult:
     merger_report: dict = field(default_factory=dict)
     governance_report: Optional[GovernanceReport] = field(default=None)
     governance_audit: list = field(default_factory=list)
+    screenplay_bible: dict = field(default_factory=dict)
     novel_text: str = ""  # raw input, preserved for storage
 
     def summary(self) -> str:
@@ -128,7 +119,7 @@ class StoryForgeWorkflow:
         self.scene_agent = SceneAgent(self.llm)
         self.event_agent = EventAgent(self.llm)
         self.relation_agent = RelationAgent(self.llm)
-        self.outline_agent = OutlineAgent(self.llm)
+        self.director_agent = DirectorAgent(self.llm)
         self.location_agent = LocationAgent(self.llm)
         self.timeline_agent = TimelineAgent(self.llm)
 
@@ -165,11 +156,14 @@ class StoryForgeWorkflow:
 
             # ── Stage 2: Unified Knowledge Extraction ──────────────────────
             # ONE LLM call per chapter, extracting all knowledge types at once.
-            # This implements think.md Principle III.
+            # Per-chapter summary/goal/conflict are collected for Global Outline (Rule Engine).
             all_chars = []
             all_scenes = []
             all_events = []
             all_relations = []
+            chapter_summaries: list[str] = []
+            chapter_goals: list[str] = []
+            chapter_conflicts: list[str] = []
 
             for idx, ch in enumerate(chapters):
                 ch_id = getattr(ch, "id", f"ch_{idx+1:03d}")
@@ -185,43 +179,17 @@ class StoryForgeWorkflow:
                 all_scenes.extend(result.scenes)
                 all_events.extend(result.events)
                 all_relations.extend(result.relations)
+                chapter_summaries.append(result.chapter_summary)
+                chapter_goals.append(result.chapter_goal)
+                chapter_conflicts.append(result.chapter_conflict)
 
                 if tracker:
-                    # Report as 1 LLM call (unified extraction) instead of 4
                     tracker.on_agent_done("知识抽取", idx, ch_title)
                     tracker.on_chapter_done(idx + 1, ch_title)
 
-            if tracker:
-                tracker.on_outline_done()
-
-            # ── Stage 3: Outline Generation ────────────────────────────────
-            outline = {}
-            try:
-                if tracker:
-                    tracker.set_phase(Phase.EXTRACTING_KNOWLEDGE)
-                story_outline = self.outline_agent.generate_outline(novel_text)
-                outline = {
-                    "genre": story_outline.genre,
-                    "theme": story_outline.theme,
-                    "main_conflict": story_outline.main_conflict,
-                    "arc_summary": story_outline.arc_summary,
-                    "act_summaries": [
-                        {
-                            "act_number": a.act_number,
-                            "title": a.title,
-                            "summary": a.summary,
-                            "key_scenes": a.key_scenes,
-                        }
-                        for a in story_outline.act_summaries
-                    ],
-                    "key_plot_points": story_outline.key_plot_points,
-                }
-                if tracker:
-                    tracker.on_outline_done()
-            except Exception:
-                pass
-
-            # ── Stage 4: Local → Global Knowledge Merge ───────────────────
+            # ── Stage 3: Local → Global Knowledge Merge ───────────────────
+            # Stage 3 Outline is now built inside merge_chapters_to_skl
+            # via GlobalStoryKnowledge.build_global_outline() (Rule Engine, no LLM)
             if tracker:
                 tracker.set_phase(Phase.MERGING_KNOWLEDGE)
 
@@ -233,7 +201,9 @@ class StoryForgeWorkflow:
                 all_scenes=all_scenes,
                 all_relations=all_relations,
                 all_events=all_events,
-                outline=outline,
+                chapter_summaries=chapter_summaries,
+                chapter_goals=chapter_goals,
+                chapter_conflicts=chapter_conflicts,
                 timeline_agent=self.timeline_agent,
                 location_agent=self.location_agent,
             )
@@ -428,8 +398,18 @@ class StoryForgeWorkflow:
             tracker._llm_done = llm_done
             tracker.set_phase(Phase.GENERATING_SCRIPTS)
 
-        # ── Stage 9: Script Generation ──────────────────────────────────
-        # Implements "Retrieval Before Generation" (Principle VIII)
+        # ── Stage 9: Director Agent — generate Screenplay Bible ──────────────────
+        bible = None
+        try:
+            if tracker:
+                tracker.set_phase(Phase.GENERATING_SCRIPTS)
+            bible = self.director_agent.create_bible(result.global_skl)
+            if tracker:
+                tracker.on_outline_done()
+        except Exception:
+            pass
+
+        # ── Stage 10: Script Agent — parallel scene generation ─────────────────
         script_agent = ScriptAgent(self.llm)
 
         # Build SKL context (filtered per scene)
@@ -469,14 +449,22 @@ class StoryForgeWorkflow:
         ]
 
         try:
-            scripts = script_agent.write_all_scenes(scene_dicts, skl_context, tracker=tracker)
+            scripts = script_agent.write_all_scenes(scene_dicts, skl_context, tracker=tracker, bible=bible)
             result.graph.scripts = scripts
-            result.merger_report["scripts_generated"] = len(scripts)
+            succeeded = sum(1 for s in scripts.values() if len(s.content) > 0)
+            failed = sum(1 for s in scripts.values() if len(s.content) == 0)
+            result.merger_report["scripts_generated"] = succeeded
+            result.merger_report["scripts_failed"] = failed
             result.merger_report["screenplay_items"] = sum(
                 len(s.content) for s in scripts.values()
             )
-        except Exception:
+        except Exception as e:
             result.merger_report["scripts_generated"] = 0
+            result.merger_report["scripts_failed"] = 0
+            result.merger_report["_script_error"] = str(e)
+
+        if bible:
+            result.screenplay_bible = bible.to_dict()
 
         if tracker:
             tracker.set_phase(Phase.DONE)
@@ -530,33 +518,9 @@ class StoryForgeWorkflow:
             all_scenes = unified_result.scenes
             all_events = unified_result.events
             all_relations = unified_result.relations
-
-            # ── Outline ──────────────────────────────────────────────────
-            outline = {}
-            try:
-                if tracker:
-                    tracker.set_phase(Phase.EXTRACTING_KNOWLEDGE)
-                story_outline = self.outline_agent.generate_outline(novel_text)
-                outline = {
-                    "genre": story_outline.genre,
-                    "theme": story_outline.theme,
-                    "main_conflict": story_outline.main_conflict,
-                    "arc_summary": story_outline.arc_summary,
-                    "act_summaries": [
-                        {
-                            "act_number": a.act_number,
-                            "title": a.title,
-                            "summary": a.summary,
-                            "key_scenes": a.key_scenes,
-                        }
-                        for a in story_outline.act_summaries
-                    ],
-                    "key_plot_points": story_outline.key_plot_points,
-                }
-                if tracker:
-                    tracker.on_outline_done()
-            except Exception:
-                pass
+            chapter_summaries = unified_result.chapter_summaries
+            chapter_goals = unified_result.chapter_goals
+            chapter_conflicts = unified_result.chapter_conflicts
 
             # ── Local → Global Merge ────────────────────────────────────
             if tracker:
@@ -570,7 +534,9 @@ class StoryForgeWorkflow:
                 all_scenes=all_scenes,
                 all_relations=all_relations,
                 all_events=all_events,
-                outline=outline,
+                chapter_summaries=chapter_summaries,
+                chapter_goals=chapter_goals,
+                chapter_conflicts=chapter_conflicts,
                 timeline_agent=self.timeline_agent,
                 location_agent=self.location_agent,
             )

@@ -10,6 +10,7 @@ from core.async_pipeline import (
     AsyncExtractionResult,
 )
 from core.chapter_parser import Chapter
+from agent.unified_extraction_agent import UnifiedExtractionResult
 
 
 def test_async_result_dataclass():
@@ -26,10 +27,10 @@ def test_extract_all_parallel_returns_correct_keys():
         Chapter(id="ch_002", number=2, title="第二章", content="陈雨走进灯塔", start_char=50, end_char=100),
     ]
 
-    # Mock agents that don't use real LLM
+    # Mock agent that implements the unified extraction interface
     class MockAgent:
-        def extract_from_chapters(self, chapters, llm):
-            return []
+        def extract(self, content, chapter_id, chapter_title):
+            return UnifiedExtractionResult()
 
     result = extract_all_parallel_sync(
         chapters,
@@ -64,9 +65,9 @@ def test_extract_all_parallel_preserves_order():
 
     # Mock agent that takes variable time
     class TrackingAgent:
-        def extract_from_chapters(self, chapters, llm):
+        def extract(self, content, chapter_id, chapter_title):
             time.sleep(0.05)  # simulate LLM call
-            return []
+            return UnifiedExtractionResult()
 
     result = extract_all_parallel_sync(
         chapters,

@@ -23,6 +23,9 @@ class LocalKnowledge:
     """Knowledge extracted from a single chapter."""
     chapter_id: str
     chapter_title: str
+    chapter_summary: str = ""
+    chapter_goal: str = ""
+    chapter_conflict: str = ""
     characters: list[Character] = field(default_factory=list)
     scenes: list[Scene] = field(default_factory=list)
     relations: list[Relation] = field(default_factory=list)
@@ -70,7 +73,12 @@ class GlobalStoryKnowledge:
     # Story timeline sorted by time marker
     timeline: list[TimelineEntry] = field(default_factory=list)
 
-    # Story outline
+    # Per-chapter summaries/goals/conflicts extracted by UnifiedExtractionAgent
+    chapter_summaries: list[str] = field(default_factory=list)
+    chapter_goals: list[str] = field(default_factory=list)
+    chapter_conflicts: list[str] = field(default_factory=list)
+
+    # Global story outline (built from merged chapter summaries/goals/conflicts)
     outline: dict = field(default_factory=dict)
 
     # Character → list of events they participated in (character arc)
@@ -253,6 +261,44 @@ class GlobalStoryKnowledge:
                     chapter_title=chapter_title,
                 ))
 
+    # ── Global outline building (Rule Engine) ─────────────────────────────────
+
+    def build_global_outline(self) -> None:
+        """Build global story outline from merged per-chapter summaries/goals/conflicts.
+
+        This is a Rule Engine operation: no LLM needed.
+        The LLM did its job in UnifiedExtractionAgent (per-chapter summary/goal/conflict).
+        The rule engine assembles them into a coherent global outline.
+        """
+        if not self.chapter_summaries:
+            return
+
+        all_text = " ".join(self.chapter_summaries)
+        conflicts_text = " ".join(self.chapter_conflicts)
+        genre = _infer_genre(all_text, conflicts_text)
+        theme = _infer_theme(self.chapter_conflicts)
+        main_conflict = _infer_main_conflict(self.chapter_conflicts)
+        arc_summary = "\n".join(
+            f"第{i+1}章：{s}"
+            for i, s in enumerate(self.chapter_summaries)
+        )
+        act_summaries = _build_acts(self.chapter_summaries)
+        key_events = [
+            e.get("title", "") if isinstance(e, dict) else ""
+            for e in self.events
+            if (isinstance(e, dict) and e.get("event_type") in ("turning_point", "revelation"))
+        ]
+        key_events += self.chapter_conflicts[:3]
+
+        self.outline = {
+            "genre": genre,
+            "theme": theme,
+            "main_conflict": main_conflict,
+            "arc_summary": arc_summary,
+            "act_summaries": act_summaries,
+            "key_plot_points": key_events[:5],
+        }
+
     # ── Serialization ────────────────────────────────────────────────────
 
     def to_dict(self) -> dict:
@@ -313,6 +359,14 @@ class KnowledgeMerger:
                     src.chapter_title if src else local.chapter_title
                 )
 
+        # Per-chapter narrative metadata
+        if local.chapter_summary:
+            self.gsk.chapter_summaries.append(local.chapter_summary)
+        if local.chapter_goal:
+            self.gsk.chapter_goals.append(local.chapter_goal)
+        if local.chapter_conflict:
+            self.gsk.chapter_conflicts.append(local.chapter_conflict)
+
         self.gsk.total_chapters = len(self.gsk.source_chapters)
         return self.gsk
 
@@ -325,6 +379,7 @@ class KnowledgeMerger:
         chapter_titles = {ch["chapter_id"]: ch["chapter_title"] for ch in self.gsk.source_chapters}
         self.gsk.build_timeline(chapter_titles)
         self.gsk.build_character_arcs()
+        self.gsk.build_global_outline()
         return self.gsk
 
     def get_global(self) -> GlobalStoryKnowledge:
@@ -339,12 +394,22 @@ def merge_chapters_to_skl(
     all_scenes: list[Scene],
     all_relations: list[Relation],
     all_events: list,
-    outline: dict,
+    chapter_summaries: list = None,
+    chapter_goals: list = None,
+    chapter_conflicts: list = None,
     timeline_agent=None,
     location_agent=None,
 ) -> GlobalStoryKnowledge:
-    """One-shot merge from chapter-based extraction results."""
+    """One-shot merge from chapter-based extraction results.
+
+    Global outline is built internally by GlobalStoryKnowledge.build_global_outline()
+    from per-chapter summaries/goals/conflicts (Rule Engine — no LLM needed here).
+    """
     from core.chapter_parser import Chapter
+
+    chapter_summaries = chapter_summaries or []
+    chapter_goals = chapter_goals or []
+    chapter_conflicts = chapter_conflicts or []
 
     chapter_map: dict[str, list[Character]] = defaultdict(list)
     chapter_scenes: dict[str, list[Scene]] = defaultdict(list)
@@ -389,6 +454,9 @@ def merge_chapters_to_skl(
         locals_list.append(LocalKnowledge(
             chapter_id=cid,
             chapter_title=ctitle,
+            chapter_summary=chapter_summaries[i] if i < len(chapter_summaries) else "",
+            chapter_goal=chapter_goals[i] if i < len(chapter_goals) else "",
+            chapter_conflict=chapter_conflicts[i] if i < len(chapter_conflicts) else "",
             characters=chapter_map.get(cid, []),
             scenes=chapter_scenes.get(cid, []),
             relations=chapter_relations.get(cid, []),
@@ -406,10 +474,9 @@ def merge_chapters_to_skl(
         locals_list[0].events.extend(chapter_events["unknown"])
 
     result = merger.merge_all(locals_list)
-    result.outline = outline
+    # outline is now built by build_global_outline() inside merge_all()
 
-    # ── MVP 2: Rich agents for locations & timeline ──────────────────────────
-    # If external agents are provided, use them (override internal rule-based build)
+    # ── Rich agents for locations & timeline ───────────────────────────────────
     if location_agent is not None:
         result.locations = location_agent.build_locations(result.scenes)
     if timeline_agent is not None:
@@ -417,3 +484,57 @@ def merge_chapters_to_skl(
         result.timeline = timeline_agent.build_timeline(result.events, chapter_titles)
 
     return result
+
+
+# ── Module-level helper functions for Global Outline (Rule Engine) ──────────────
+
+def _infer_genre(summaries_text: str, conflicts_text: str) -> str:
+    genre_signals = {
+        "thriller": ["调查", "秘密", "失踪", "神秘", "阴谋", "真相", "线索"],
+        "horror": ["恐怖", "惊悚", "黑暗", "危险", "恐惧", "诅咒", "鬼"],
+        "romance": ["爱情", "恋人", "心动", "告白", "感情", "亲密"],
+        "fantasy": ["魔法", "异世界", "超自然", "奇幻", "妖怪", "仙侠"],
+        "sci-fi": ["科技", "飞船", "外星", "未来", "机器人", "太空"],
+    }
+    text = summaries_text + " " + conflicts_text
+    for genre, keywords in genre_signals.items():
+        if sum(1 for kw in keywords if kw in text) >= 2:
+            return genre
+    return "general"
+
+
+def _infer_theme(conflicts: list[str]) -> str:
+    conflict_text = " ".join(conflicts) if conflicts else ""
+    if "真相" in conflict_text or "秘密" in conflict_text:
+        return "真相与掩盖 — 追寻被隐藏的事实"
+    if "威胁" in conflict_text or "危险" in conflict_text:
+        return "生存与抉择 — 面对危险时的道德困境"
+    if "追寻" in conflict_text or "目标" in conflict_text:
+        return "追寻与成长 — 角色追寻目标的成长之路"
+    return "悬念与冲突 — 故事的核心张力"
+
+
+def _infer_main_conflict(conflicts: list[str]) -> str:
+    if not conflicts:
+        return "待分析"
+    return max(conflicts, key=len)
+
+
+def _build_acts(chapter_summaries: list[str]) -> list[dict]:
+    if not chapter_summaries:
+        return []
+    n = len(chapter_summaries)
+    if n == 1:
+        return [{"act_number": 1, "title": "开端与结局", "summary": chapter_summaries[0], "key_scenes": []}]
+    if n == 2:
+        return [
+            {"act_number": 1, "title": "开端", "summary": chapter_summaries[0], "key_scenes": []},
+            {"act_number": 2, "title": "发展与结局", "summary": "\n".join(chapter_summaries[1:]), "key_scenes": []},
+        ]
+    cut1 = max(1, n // 3)
+    cut2 = max(cut1 + 1, 2 * n // 3)
+    return [
+        {"act_number": 1, "title": "开端", "summary": "\n".join(chapter_summaries[:cut1]), "key_scenes": []},
+        {"act_number": 2, "title": "发展", "summary": "\n".join(chapter_summaries[cut1:cut2]), "key_scenes": []},
+        {"act_number": 3, "title": "高潮与结局", "summary": "\n".join(chapter_summaries[cut2:]), "key_scenes": []},
+    ]

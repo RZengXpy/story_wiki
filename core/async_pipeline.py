@@ -26,7 +26,7 @@ Usage:
     unified_result = extract_all_parallel_sync(chapters, char_agent, scene_agent, event_agent, relation_agent)
 """
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 try:
@@ -37,11 +37,14 @@ except ImportError:
 
 @dataclass
 class AsyncExtractionResult:
-    """Aggregated extraction results from all chapters."""
+    """Aggregated extraction results from all chapters (parallel version)."""
     characters: list
     scenes: list
     events: list
     relations: list
+    chapter_summaries: list[str] = field(default_factory=list)
+    chapter_goals: list[str] = field(default_factory=list)
+    chapter_conflicts: list[str] = field(default_factory=list)
 
 
 async def _extract_one_chapter(chapters_with_idx, extraction_agent):
@@ -138,6 +141,9 @@ async def extract_all_parallel_unified(
     all_scenes = []
     all_events = []
     all_relations = []
+    chapter_summaries: list[str] = []
+    chapter_goals: list[str] = []
+    chapter_conflicts: list[str] = []
 
     # Sort by chapter index to maintain order
     results.sort(key=lambda x: x[0])
@@ -151,12 +157,18 @@ async def extract_all_parallel_unified(
         all_scenes.extend(result.scenes)
         all_events.extend(result.events)
         all_relations.extend(result.relations)
+        chapter_summaries.append(result.chapter_summary)
+        chapter_goals.append(result.chapter_goal)
+        chapter_conflicts.append(result.chapter_conflict)
 
     return AsyncExtractionResult(
         characters=all_chars,
         scenes=all_scenes,
         events=all_events,
         relations=all_relations,
+        chapter_summaries=chapter_summaries,
+        chapter_goals=chapter_goals,
+        chapter_conflicts=chapter_conflicts,
     )
 
 

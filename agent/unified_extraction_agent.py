@@ -1,17 +1,14 @@
 """UnifiedExtractionAgent — single-pass, single-LLM-call knowledge extraction per chapter.
 
 Implements think.md Principle III: "Unified Knowledge Extraction"
-  Chapter → [ONE LLM call] → Local Knowledge (characters/relations/events/locations/timeline)
+  Chapter → [ONE LLM call] → Local Knowledge
 
-This replaces the previous pattern where multiple agents each re-read the same chapter,
-which was costly, error-prone, and violated the SKL architecture.
+Output includes:
+  - characters / relations / events / scenes
+  - chapter_summary / chapter_goal / chapter_conflict (per chapter)
+  - Aggregated result joins all chapter summaries/goals/conflicts into global outline
 
-Design goals:
-  1. One LLM call per chapter — not one per agent type
-  2. Output covers all knowledge types simultaneously
-  3. Each extracted item is tagged with a SourceTrace
-  4. Structured JSON output for reliable parsing
-  5. Returns Event dataclass objects (not dicts) for compatibility
+This replaces the previous pattern where multiple agents each re-read the same chapter.
 """
 from dataclasses import dataclass, field
 from typing import Optional
@@ -62,7 +59,10 @@ Return a JSON object with exactly these keys:
       "description": "2-3 sentence visual description of what we see",
       "characters": ["list of character names appearing in this scene"]
     }
-  ]
+  ],
+  "chapter_summary": "2-3 sentence summary of what this chapter is about",
+  "chapter_goal": "what the protagonist wants to achieve in this chapter",
+  "chapter_conflict": "what obstacle or tension prevents that goal in this chapter"
 }
 
 IMPORTANT RULES:
@@ -73,15 +73,21 @@ IMPORTANT RULES:
 - If a character's role is unclear, default to "supporting"
 - Do NOT invent information not present in the text
 - Use consistent character names throughout — if the text uses a nickname and a real name for the same person, use the real name
+- chapter_summary/chapter_goal/chapter_conflict are REQUIRED — if unclear, write your best inference
 """
 
 
 @dataclass
 class UnifiedExtractionResult:
     """Result of a single-pass chapter extraction."""
+    chapter_id: str = ""
+    chapter_title: str = ""
+    chapter_summary: str = ""
+    chapter_goal: str = ""
+    chapter_conflict: str = ""
     characters: list[Character] = field(default_factory=list)
     scenes: list[Scene] = field(default_factory=list)
-    events: list[dict] = field(default_factory=list)  # raw dicts for flexibility
+    events: list[dict] = field(default_factory=list)
     relations: list[Relation] = field(default_factory=list)
 
 
@@ -123,6 +129,11 @@ class UnifiedExtractionAgent:
         relations = self._build_relations(response.get("relations", []), source)
 
         return UnifiedExtractionResult(
+            chapter_id=chapter_id,
+            chapter_title=chapter_title,
+            chapter_summary=response.get("chapter_summary", "").strip(),
+            chapter_goal=response.get("chapter_goal", "").strip(),
+            chapter_conflict=response.get("chapter_conflict", "").strip(),
             characters=characters,
             scenes=scenes,
             events=events,
@@ -217,10 +228,8 @@ def extract_all_chapters(
 ) -> UnifiedExtractionResult:
     """Extract knowledge from all chapters sequentially.
 
-    For parallel extraction, use extract_all_parallel from core/async_pipeline.py instead.
-
     Returns a UnifiedExtractionResult with all knowledge from all chapters.
-    Each item carries its own SourceTrace.
+    The aggregated result includes per-chapter summaries/goals/conflicts joined together.
     """
     agent = UnifiedExtractionAgent(llm)
 
@@ -228,6 +237,9 @@ def extract_all_chapters(
     all_scenes: list[Scene] = []
     all_events: list = []
     all_relations: list[Relation] = []
+    chapter_summaries: list[str] = []
+    chapter_goals: list[str] = []
+    chapter_conflicts: list[str] = []
 
     for idx, ch in enumerate(chapters):
         ch_id = getattr(ch, "id", f"ch_{idx+1:03d}")
@@ -243,11 +255,22 @@ def extract_all_chapters(
         all_scenes.extend(result.scenes)
         all_events.extend(result.events)
         all_relations.extend(result.relations)
+        if result.chapter_summary:
+            chapter_summaries.append(f"第{idx+1}章 {ch_title}: {result.chapter_summary}")
+        if result.chapter_goal:
+            chapter_goals.append(f"第{idx+1}章 {ch_title}: {result.chapter_goal}")
+        if result.chapter_conflict:
+            chapter_conflicts.append(f"第{idx+1}章 {ch_title}: {result.chapter_conflict}")
 
         if tracker:
             tracker.on_chapter_done(idx + 1, ch_title)
 
     return UnifiedExtractionResult(
+        chapter_id="aggregated",
+        chapter_title="",
+        chapter_summary="\n".join(chapter_summaries),
+        chapter_goal="\n".join(chapter_goals),
+        chapter_conflict="\n".join(chapter_conflicts),
         characters=all_chars,
         scenes=all_scenes,
         events=all_events,

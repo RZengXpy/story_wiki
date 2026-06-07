@@ -1548,7 +1548,7 @@ def _reconstruct_gsk(skl_data: dict, chapters_data: list) -> object:
     events, character_first_appearance fields — enough for the UI tabs.
     """
     from core.knowledge_merger import GlobalStoryKnowledge
-    from core.schema.models import Character, Scene, Relation
+    from schema.models import Character, Scene, Relation
     from agent.location_agent import LocationInfo
     from agent.timeline_agent import TimelineEntry
 
@@ -1562,7 +1562,7 @@ def _reconstruct_gsk(skl_data: dict, chapters_data: list) -> object:
     for c_data in skl_data.get("characters", []):
         src_data = c_data.get("source", {})
         if isinstance(src_data, dict):
-            from core.schema.models import SourceTrace
+            from schema.models import SourceTrace
             src = SourceTrace(
                 chapter_id=src_data.get("chapter_id", ""),
                 chapter_title=src_data.get("chapter_title", ""),
@@ -1582,7 +1582,7 @@ def _reconstruct_gsk(skl_data: dict, chapters_data: list) -> object:
     for s_data in skl_data.get("scenes", []):
         src_data = s_data.get("source", {})
         if isinstance(src_data, dict):
-            from core.schema.models import SourceTrace
+            from schema.models import SourceTrace
             src = SourceTrace(
                 chapter_id=src_data.get("chapter_id", ""),
                 chapter_title=src_data.get("chapter_title", ""),
@@ -1603,7 +1603,7 @@ def _reconstruct_gsk(skl_data: dict, chapters_data: list) -> object:
     for r_data in skl_data.get("relations", []):
         src_data = r_data.get("source", {})
         if isinstance(src_data, dict):
-            from core.schema.models import SourceTrace
+            from schema.models import SourceTrace
             src = SourceTrace(
                 chapter_id=src_data.get("chapter_id", ""),
                 chapter_title=src_data.get("chapter_title", ""),
