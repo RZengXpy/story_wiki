@@ -118,7 +118,5 @@ class ChapterCache:
 
 
 def _hash_content(content: str) -> str:
-    """SHA-256 hash of chapter content (first 512 + last 512 chars for speed)."""
-    head = content[:512]
-    tail = content[-512:] if len(content) > 512 else ""
-    return hashlib.sha256((head + tail).encode("utf-8")).hexdigest()[:16]
+    """SHA-256 hash of full chapter content."""
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()

@@ -11,6 +11,7 @@ Features:
 from __future__ import annotations
 
 import sys
+import re
 from pathlib import Path
 
 _root = Path(__file__).resolve().parents[1]
@@ -22,7 +23,7 @@ import yaml
 from datetime import datetime
 
 from core.workflow import StoryForgeWorkflow, WorkflowResult
-from core.story_graph import StoryGraph, CharacterRole, EventType, WarningSeverity
+from core.story_graph import StoryGraph, CharacterRole, EventType, WarningSeverity, ScriptNode, ScriptItem
 from core.knowledge_governance import (
     Patch, KnowledgeGovernor, GovernanceReport,
     AuditEntry, AuditTrail,
@@ -131,7 +132,11 @@ def render_upload_section():
     if yaml_file is not None:
         try:
             yaml_data = yaml.safe_load(yaml_file)
+            if not isinstance(yaml_data, dict):
+                raise ValueError("YAML 文件格式无效")
             st.success(f"已导入 YAML：{yaml_data.get('story_graph', {}).get('metadata', {}).get('title', '未命名')}")
+        except yaml.YAMLError as e:
+            st.error(f"YAML 解析失败：{e}")
         except Exception as e:
             st.error(f"导入失败：{e}")
 
@@ -251,13 +256,13 @@ def render_metadata_tab(graph: StoryGraph):
     st.subheader("📊 知识合并报告")
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.text(f"去重角色: {meta.get('unique_characters', '-')}")
+        st.metric("去重角色", meta.get("unique_characters", "-"))
     with c2:
-        st.text(f"去重场景: {meta.get('unique_scenes', '-')}")
+        st.metric("去重场景", meta.get("unique_scenes", "-"))
     with c3:
-        st.text(f"去重关系: {meta.get('unique_relations', '-')}")
+        st.metric("去重关系", meta.get("unique_relations", "-"))
     with c4:
-        st.text(f"去重事件: {meta.get('unique_events', '-')}")
+        st.metric("去重事件", meta.get("unique_events", "-"))
 
 
 # ── Tab: Characters ────────────────────────────────────────────────────────────
@@ -281,26 +286,31 @@ def render_characters_tab(result: WorkflowResult, graph: StoryGraph, gsk):
                 new_value = st.text_input("新值")
             reason = st.text_input("修正原因", placeholder="例如：用户确认")
             if st.button("应用修正", type="primary"):
-                governor = KnowledgeGovernor(gsk, graph=graph)
-                old_value = ""
-                for c in gsk.characters:
-                    if c.name == target_name:
-                        old_value = getattr(c, field, "")
-                        break
-                patch = Patch(
-                    target_type="character",
-                    target_id=target_name,
-                    field=field,
-                    old_value=old_value,
-                    new_value=new_value,
-                    reason=reason or "用户修正",
-                )
-                success = governor.apply_patch(patch)
-                if success:
-                    st.success(f"已修正「{target_name}」的 {field} → 「{new_value}」")
-                    st.rerun()
+                if not new_value:
+                    st.warning("新值不能为空，请输入有效内容")
+                elif not reason:
+                    st.warning("请填写修正原因")
                 else:
-                    st.error("修正失败")
+                    governor = KnowledgeGovernor(gsk, graph=graph)
+                    old_value = ""
+                    for c in gsk.characters:
+                        if c.name == target_name:
+                            old_value = getattr(c, field, "")
+                            break
+                    patch = Patch(
+                        target_type="character",
+                        target_id=target_name,
+                        field=field,
+                        old_value=old_value,
+                        new_value=new_value,
+                        reason=reason,
+                    )
+                    success = governor.apply_patch(patch)
+                    if success:
+                        st.success(f"已修正「{target_name}」的 {field} → 「{new_value}」")
+                        st.rerun()
+                    else:
+                        st.error("修正失败")
 
     st.divider()
 
@@ -700,18 +710,23 @@ def render_governance_tab(result: WorkflowResult):
                     new_val = st.text_input("新值")
                 reason = st.text_input("原因", placeholder="例如：用户确认")
                 if st.button("应用", type="primary"):
-                    governor = KnowledgeGovernor(result.global_skl, graph=result.graph)
-                    old_val = ""
-                    for c in result.global_skl.characters:
-                        if c.name == target_name:
-                            old_val = getattr(c, field, "")
-                            break
-                    patch = Patch("character", target_name, field, old_val, new_val, reason or "用户修正")
-                    if governor.apply_patch(patch):
-                        st.success(f"已修正 「{target_name}.{field}」 = 「{new_val}」")
-                        st.rerun()
+                    if not new_val:
+                        st.warning("新值不能为空")
+                    elif not reason:
+                        st.warning("请填写修正原因")
                     else:
-                        st.error("修正失败")
+                        governor = KnowledgeGovernor(result.global_skl, graph=result.graph)
+                        old_val = ""
+                        for c in result.global_skl.characters:
+                            if c.name == target_name:
+                                old_val = getattr(c, field, "")
+                                break
+                        patch = Patch("character", target_name, field, old_val, new_val, reason)
+                        if governor.apply_patch(patch):
+                            st.success(f"已修正 「{target_name}.{field}」 = 「{new_val}」")
+                            st.rerun()
+                        else:
+                            st.error("修正失败")
 
 
 # ── Tab: Audit Trail ──────────────────────────────────────────────────────────
@@ -843,7 +858,6 @@ def render_screenplay_tab(result: WorkflowResult, graph: StoryGraph):
         # Save changes button
         if st.button("💾 保存修改", type="primary"):
             # Apply edits to graph in memory
-            from core.story_graph import ScriptNode, ScriptItem
             updated_items = []
             for item_dict in new_edited:
                 updated_items.append(ScriptItem(
@@ -927,7 +941,7 @@ def render_yaml_tab(result: WorkflowResult, graph: StoryGraph):
 
 
 def _apply_yaml_to_graph(data: dict, graph: StoryGraph):
-    """Apply YAML data back to StoryGraph (basic field update)."""
+    """Apply YAML data back to StoryGraph (metadata + warnings only; characters/scenes/events/scripts are read-only after generation)."""
     sg = data.get("story_graph", data)
 
     # Update metadata
@@ -965,6 +979,8 @@ def main():
     init_session_state()
     render_header()
     api_key, model, run_check, run_governance = render_sidebar()
+    if run_governance:
+        pass  # governance is always enabled in workflow; reserved for future per-toggle control
     novel_text, title, author, yaml_data = render_upload_section()
 
     # Handle YAML import

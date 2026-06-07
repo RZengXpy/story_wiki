@@ -173,13 +173,16 @@ Story outline: {skl_context.get('outline', {}).get('main_conflict', 'Unknown con
         results = {}
         for scene in scenes:
             scene_id = scene.get("id", scene.get("title", f"scene_{len(results)}"))
-            script_node = self.write_scene(
-                scene_title=scene.get("title", ""),
-                scene_location=scene.get("location", ""),
-                scene_time=scene.get("time", ""),
-                characters_present=scene.get("characters_present", []),
-                scene_summary=scene.get("summary", ""),
-                skl_context=skl_context,
-            )
+            try:
+                script_node = self.write_scene(
+                    scene_title=scene.get("title", ""),
+                    scene_location=scene.get("location", ""),
+                    scene_time=scene.get("time", ""),
+                    characters_present=scene.get("characters_present", []),
+                    scene_summary=scene.get("summary", ""),
+                    skl_context=skl_context,
+                )
+            except Exception as e:
+                script_node = ScriptNode(id=scene_id, content=[])
             results[scene_id] = script_node
         return results

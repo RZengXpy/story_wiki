@@ -367,16 +367,45 @@ class ConflictResolver:
                         rel.to_char = name_a
 
     def _apply_keep_a(self, conflict: KnowledgeConflict) -> None:
+        """Keep entity_a, remove entity_b from gsk."""
+        name_b = conflict.entity_b.get("name", "")
+        if name_b:
+            self.gsk.characters = [c for c in self.gsk.characters if c.name != name_b]
+            for rel in self.gsk.relations:
+                if rel.from_char == name_b:
+                    rel.from_char = conflict.entity_a.get("name", "")
+                if rel.to_char == name_b:
+                    rel.to_char = conflict.entity_a.get("name", "")
         self.audit_trail.record("resolve_conflict", conflict.entity_a.get("type", "unknown"),
                                 conflict.entity_a.get("id", ""), conflict.entity_a, None,
                                 reason=f"Keep entity A, discard entity B")
 
     def _apply_keep_b(self, conflict: KnowledgeConflict) -> None:
+        """Keep entity_b, remove entity_a from gsk."""
+        name_a = conflict.entity_a.get("name", "")
+        if name_a:
+            self.gsk.characters = [c for c in self.gsk.characters if c.name != name_a]
+            name_b = conflict.entity_b.get("name", "")
+            for rel in self.gsk.relations:
+                if rel.from_char == name_a:
+                    rel.from_char = name_b
+                if rel.to_char == name_a:
+                    rel.to_char = name_b
         self.audit_trail.record("resolve_conflict", conflict.entity_b.get("type", "unknown"),
                                 conflict.entity_b.get("id", ""), conflict.entity_b, None,
                                 reason=f"Keep entity B, discard entity A")
 
     def _apply_merge(self, conflict: KnowledgeConflict) -> None:
+        """Merge entity_b into entity_a (keep A, remove B, update relations)."""
+        name_a = conflict.entity_a.get("name", "")
+        name_b = conflict.entity_b.get("name", "")
+        if name_b and name_a:
+            self.gsk.characters = [c for c in self.gsk.characters if c.name != name_b]
+            for rel in self.gsk.relations:
+                if rel.from_char == name_b:
+                    rel.from_char = name_a
+                if rel.to_char == name_b:
+                    rel.to_char = name_a
         self.audit_trail.record("resolve_conflict", "character",
                                 conflict.entity_a.get("name", ""),
                                 conflict.entity_a, conflict.entity_b,

@@ -195,14 +195,13 @@ class GlobalStoryKnowledge:
         time_order = {
             "黎明": 0, "凌晨": 0, "清晨": 1, "早晨": 1, "早上": 1, "上午": 2,
             "中午": 3, "午间": 3, "午后": 3,
-            "下午": 4, "傍晚": 5, "黄昏": 5, "傍晚": 5,
-            "晚上": 6, "夜里": 7, "深夜": 8, "午夜": 8, "凌晨": 9,
+            "下午": 4, "傍晚": 5, "黄昏": 5,
+            "晚上": 6, "夜里": 7, "深夜": 8, "午夜": 8,
         }
         self.timeline = []
         for e in self.events:
             e_dict = e if isinstance(e, dict) else e.__dict__
             marker = e_dict.get("time_marker", "")
-            order = time_order.get(marker, 50)
             chapter_title = chapter_titles.get(
                 e_dict.get("source", {}).get("chapter_id", "") if isinstance(e_dict.get("source"), dict) else "", ""
             )

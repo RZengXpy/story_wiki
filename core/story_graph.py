@@ -1,4 +1,5 @@
 """StoryGraph data model — 小说知识图谱表示."""
+import yaml
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
@@ -110,8 +111,6 @@ class StoryGraph:
     warnings: list[WarningNode] = field(default_factory=list)
 
     def to_yaml(self) -> str:
-        import yaml
-
         def enum_safe(obj):
             if hasattr(obj, "value"):
                 return obj.value

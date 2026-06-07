@@ -1,6 +1,5 @@
 """Event Agent — extracts story events with source tracing."""
 from dataclasses import dataclass, field
-from typing import Optional
 
 from core.llm_client import LLMClient
 from core.prompts import SYSTEM_PROMPT
@@ -64,7 +63,7 @@ class EventAgent:
         """Extract events from multiple chapters."""
         all_events = []
         for ch in chapters:
-            if hasattr(ch, "content"):
+            if hasattr(ch, "content") and ch.content.strip():
                 chapter_events = self.extract_events(ch.content, ch.id, ch.title)
                 all_events.extend(chapter_events)
         return all_events
