@@ -25,11 +25,11 @@ def test_hash_content_differs():
 
 
 def test_hash_content_truncated_efficiency():
-    """Hash uses only head+tail, not full content."""
-    # A very long string — hash should be fast (512+512 chars max)
+    """Hash uses SHA-256 of full chapter content."""
+    # A very long string — hash computation time is linear in content length
     long_str = "林" * 10000
     h = _hash_content(long_str)
-    assert len(h) == 16  # truncated SHA-256
+    assert len(h) == 64  # full SHA-256 hex string
     print("  PASS: hash_content_truncated_efficiency")
 
 

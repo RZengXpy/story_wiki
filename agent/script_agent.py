@@ -10,6 +10,11 @@ from core.prompts import (
 )
 from core.story_graph import ScriptNode, ScriptItem
 
+try:
+    from core.progress import ProgressTracker
+except ImportError:
+    ProgressTracker = None
+
 
 def filter_relevant_context(
     skl: dict,
@@ -168,18 +173,26 @@ Story outline: {skl_context.get('outline', {}).get('main_conflict', 'Unknown con
         self,
         scenes: list[dict],
         skl_context: dict,
+        tracker: Optional["ProgressTracker"] = None,
     ) -> dict[str, ScriptNode]:
         """Generate screenplay for all scenes, returns scene_id -> ScriptNode."""
         results = {}
-        for scene in scenes:
+        for idx, scene in enumerate(scenes):
             scene_id = scene.get("id", scene.get("title", f"scene_{len(results)}"))
-            script_node = self.write_scene(
-                scene_title=scene.get("title", ""),
-                scene_location=scene.get("location", ""),
-                scene_time=scene.get("time", ""),
-                characters_present=scene.get("characters_present", []),
-                scene_summary=scene.get("summary", ""),
-                skl_context=skl_context,
-            )
+            if tracker:
+                tracker.on_scene_start(idx + 1, scene_id)
+            try:
+                script_node = self.write_scene(
+                    scene_title=scene.get("title", ""),
+                    scene_location=scene.get("location", ""),
+                    scene_time=scene.get("time", ""),
+                    characters_present=scene.get("characters_present", []),
+                    scene_summary=scene.get("summary", ""),
+                    skl_context=skl_context,
+                )
+            except Exception as e:
+                script_node = ScriptNode(id=scene_id, content=[])
             results[scene_id] = script_node
+            if tracker:
+                tracker.on_scene_done(idx + 1, scene_id)
         return results

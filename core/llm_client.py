@@ -17,6 +17,10 @@ class LLMClient:
     ):
         self.model = model
         resolved_key = api_key or os.environ.get("OPENAI_API_KEY")
+        if not resolved_key:
+            raise ValueError(
+                "API key 未设置。请通过参数传入 api_key 或设置环境变量 OPENAI_API_KEY"
+            )
         env_url = os.environ.get("BASE_URL")
         if base_url:
             resolved_url = base_url
@@ -35,7 +39,7 @@ class LLMClient:
             ],
             temperature=temperature,
         )
-        return response.choices[0].message.content
+        return response.choices[0].message.content or ""
 
     def generate_json(self, system_prompt: str, user_prompt: str, temperature: float = 0.3) -> dict:
         response = self.client.chat.completions.create(
@@ -48,4 +52,4 @@ class LLMClient:
             response_format={"type": "json_object"},
         )
         content = response.choices[0].message.content
-        return json.loads(content)
+        return json.loads(content) if content else {}

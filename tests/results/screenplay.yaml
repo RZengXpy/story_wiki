@@ -1,58 +1,21 @@
-screenplay: "```json\n{\n  \"screenplay\": \"SCENE 1\\n\\nINT. FOG HARBOR LIBRARY\
-  \ - DAY (AFTERNOON)\\n\\nRAIN pours down for days. The sea wind carries salty mist\
-  \ through the narrow streets. Old streetlights flicker in the rain curtain.\\n\\\
-  nLibrary interior. Dusty shelves. LIN CHUAN (30, neat, observant) organizes files\
-  \ at a desk.\\n\\nThe library door opens. An ELDERLY MAN (70s, gray trench coat,\
-  \ wooden cane) enters, dripping water.\\n\\nELDERLY MAN\\nExcuse me... Do you still\
-  \ keep the ship log of the \\\"North Star\\\"?\\n\\nLin Chuan freezes. The North\
-  \ Star—a cargo ship that vanished twenty years ago.\\n\\nLIN CHUAN\\n(voicing curiosity)\\\
-  nIt might be in the basement archive. Follow me.\\n\\nThey descend to the basement.\\\
-  n\\nSCENE 2\\n\\nINT. BASEMENT ARCHIVE - CONTINUOUS\\n\\nRows of metal cabinets.\
-  \ Dusty labels. They search for folder N-27.\\n\\nThe drawer is empty except for\
-  \ a yellowed note.\\n\\nCLOSE ON NOTE:\\n\\\"Don't seek the secret beneath the lighthouse.\\\
-  \"\\n\\nThe elderly man's face pales.\\n\\nELDERLY MAN\\nSomeone already took it...\\\
-  n\\nHe turns and hurries out without another word.\\n\\nSCENE 3\\n\\nINT. LIBRARY\
-  \ - NIGHT\\n\\nLin Chuan sits at his desk. He examines the note under a lamp. On\
-  \ the back, nearly invisible tiny text:\\n\\n\\\"October 17. Midnight.\\\"\\n\\\
-  nHis eyes narrow.\\n\\nSCENE 4\\n\\nINT. CHEN YU'S APARTMENT - DAY (NEXT DAY)\\\
-  n\\nCHEN YU (28, energetic journalist) stares at the note Lin Chuan brought.\\n\\\
-  nCHEN YU\\n\\\"Secret beneath the lighthouse\\\"? This is too good to miss.\\n\\\
-  nShe grabs her jacket.\\n\\nCHEN YU\\nLet's go.\\n\\nSCENE 5\\n\\nEXT. ABANDONED\
-  \ LIGHTHOUSE - EVENING (6:00 PM)\\n\\nBlack Reef Coast. Rusted gate half-open. Rain\
-  \ glistens on stone.\\n\\nLin Chuan and Chen Yu approach. Fresh footprints in the\
-  \ mud.\\n\\nSCENE 6\\n\\nINT. LIGHTHOUSE STAIRCASE - CONTINUOUS\\n\\nThey descend\
-  \ a spiral staircase. Cobwebs broken. Someone passed recently.\\n\\nSCENE 7\\n\\\
-  nINT. UNDERGROUND STORAGE ROOM - CONTINUOUS\\n\\nA hidden iron door at the end.\
-  \ Unlocked.\\n\\nThey push it open.\\n\\nA single metal waterproof box on a pedestal.\
-  \ Inside: a tattered logbook.\\n\\nCLOSE ON COVER: \\\"North Star Voyage Record\\\
-  \"\\n\\nFootsteps echo from the stairway. A MAN in black raincoat appears.\\n\\\
-  nBLACK RAINCOAT\\nHand over the log.\\n\\nChen Yu discreetly presses RECORD on her\
-  \ pocket recorder.\\n\\nTension. Lin Chuan holds the box.\\n\\nBlack Raincoat lunges\
-  \ for it. Struggle. The box falls. A folded map slips out.\\n\\nAN UNKNOWN ISLAND—not\
-  \ on any public chart.\\n\\nBlack Raincoat's eyes widen. He hesitates, then turns\
-  \ and runs up the stairs.\\n\\nLin Chuan picks up the map.\\n\\nLIN CHUAN\\nWhat\
-  \ is this place...\\n\\nSCENE 8\\n\\nEXT. FISHING BOAT - NIGHT (OCTOBER 17, MIDNIGHT)\\\
-  n\\nRough sea. Dense fog. Captain LAO ZHOU (50s, grizzled) steers, grumbling.\\\
-  n\\nLAO ZHOU\\nNever seen fog this thick. Bad luck sea.\\n\\nLin Chuan studies the\
-  \ map and logbook.\\n\\nSCENE 9\\n\\nEXT. MYSTERY ISLAND - NIGHT (AFTER 1:00 AM)\\\
-  n\\nThrough fog, the island looms. They dock a small dinghy.\\n\\nCentral: an abandoned\
-  \ observation station.\\n\\nSCENE 10\\n\\nINT. OBSERVATION STATION - NIGHT\\n\\\
-  nOld equipment still humming. Lin Chuan finds encrypted files on a terminal.\\n\\\
-  nHe decrypts them. Data reveals:\\n\\nTwenty years ago, North Star crew discovered\
-  \ a special ore on the seabed—one that disrupts radio signals.\\n\\nA company covered\
-  \ it up, faked a shipwreck.\\n\\nThe elderly man is XU YUAN, former first mate of\
-  \ North Star, seeking truth.\\n\\nCHEN YU\\nWe need to get this out.\\n\\nJust then—\\\
-  n\\nSCENE 11\\n\\nEXT. OBSERVATION STATION - CONTINUOUS\\n\\nEngine roar. Four off-road\
-  \ vehicles surround the building.\\n\\nBlack Raincoat steps out, followed by two\
-  \ men.\\n\\nBLACK RAINCOAT\\nLeave the files. Now.\\n\\nChen Yu pulls out her phone,\
-  \ activates live-stream.\\n\\nCHEN YU\\nToo late. The world is watching.\\n\\nShe\
-  \ uploads all files. Within minutes, the data goes viral.\\n\\nBlack Raincoat's\
-  \ men look at him uncertainly. He realizes the cover is blown.\\n\\nHe gestures\
-  \ them to retreat. Engines rev. They drive off.\\n\\nSCENE 12\\n\\nEXT. ISLAND SHORE\
-  \ - DAWN\\n\\nFog begins to lift. XU YUAN arrives by boat.\\n\\nHe walks to Lin\
-  \ Chuan and Chen Yu. Silence. Then he extends his hand.\\n\\nXU YUAN\\nThank you.\\\
-  n\\nSunlight breaks through the mist, illuminating the sea.\\n\\nFADE OUT.\"\n}\n\
-  ```"
+screenplay: "{\n  \"screenplay\": \"EXT. 雾港镇 - 白天\\n\\n雨连绵不绝，海风裹挟咸湿雾气穿过街道。老旧路灯在雨幕中忽明忽暗。\\\
+  n\\nINT. 镇图书馆 - 下午\\n\\n林川，三十岁，整理着书桌上的档案。大门被推开，一位老人走进来。\\n\\n老人：\\n（深沉）\\n请问，这里还保存着“北辰号”的航海日志吗？\\\
+  n\\n林川抬起头，愣了一下。\\n\\n林川：\\n北辰号……那艘二十年前失踪的货船？\\n\\n老人点点头。\\n\\n林川：\\n跟我来吧。\\n\\nINT.\
+  \ 地下档案室 - 下午\\n\\n林川和老人翻找档案柜。编号N-27的位置空空如也。\\n\\n林川：\\n奇怪，日志应该在这里的。\\n\\n他在柜底发现一张泛黄纸条。\\\
+  n\\n林川（念）：\\n“不要寻找灯塔下面的秘密。”\\n\\n老人脸色骤变。\\n\\n老人：\\n已经有人先一步拿走了。\\n\\n他转身匆匆离开。\\\
+  n\\nINT. 图书馆 - 晚上\\n\\n林川独自在灯下研究纸条。他翻转纸条，看到几乎看不见的小字。\\n\\n林川（轻声）：\\n“10月17日，午夜。”\\\
+  n\\nINT. 林川家 - 第二天\\n\\n林川和朋友陈雨坐在沙发上。\\n\\n林川：\\n纸条背后有日期——今晚午夜。\\n\\n陈雨：\\n（兴奋）\\\
+  n灯塔下面的秘密？这太值得调查了。\\n\\nINT. 废弃灯塔 - 傍晚六点\\n\\n锈蚀大门半掩。林川和陈雨进入。地板上有新鲜脚印。\\n\\n他们沿螺旋楼梯向下。\\\
+  n\\n地下室尽头有一扇铁门。推开后，是秘密储藏室。\\n\\n房间中央防水金属箱。打开，是一本残破航海日志。\\n\\n林川：\\n《北辰号航海记录》。\\\
+  n\\n突然，脚步声。门口出现一个黑衣男人。\\n\\n黑衣男人：\\n把日志交出来。\\n\\n陈雨偷偷按录音笔。沉默对峙。\\n\\n黑衣男人逼近。抢夺中，金属箱跌地。\\\
+  n\\n从夹层中滑出一张地图。标记着一座无名小岛。\\n\\n黑衣男人看到地图，慌张起来，转身逃离。\\n\\n林川捡起地图。\\n\\n林川：\\n（低声）\\\
+  n或许和这个岛有关。\\n\\nINT. 渔船 - 10月17日午夜\\n\\n海面浓雾。船长老周掌舵。\\n\\n老周：\\n这天气真不适合出海。\\n\\\
+  n林川：\\n我们必须去地图上的位置。\\n\\nEXT. 神秘岛 - 凌晨一点\\n\\n船靠岸。三人登岛。岛中央矗立废弃观测站。\\n\\nINT. 观测站主控室\
+  \ - 凌晨\\n\\n设备陈旧但能运转。林川找到加密文件。\\n\\n林川（读文件）：\\n“北辰号在海底发现特殊矿石……干扰无线电信号。”\\n\\n陈雨：\\\
+  n所以根本不是海难！是有人伪造事故！\\n\\n突然，外面发动机轰鸣。数辆越野车包围建筑。\\n\\n黑衣男人出现。\\n\\n黑衣男人：\\n把文件留下。\\\
+  n\\n陈雨打开手机，开始直播。\\n\\n陈雨：\\n（对着镜头）\\n各位，这里是国际船运的黑暗秘密……\\n\\n黑衣男人试图阻止，但内容已上传网络。\\\
+  n\\n黑衣男人意识到无法掩盖，转身离开。\\n\\nEXT. 观测站外 - 黎明\\n\\n浓雾散去。许远，那位老人，从远处走来。\\n\\n许远（对林川）：\\\
+  n谢谢你们……让我在有生之年看到真相。\\n\\n林川点头。晨光照亮整片海域。\\n\"]\n}"
 metadata:
   genre: thriller
-  chars: 4174
+  chars: 1307

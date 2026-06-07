@@ -87,7 +87,7 @@ class TimelineAgent:
                 participants=e_dict.get("participants", []),
                 chapter_title=chapter_title,
             ))
-        timeline.sort(key=lambda x: (_TIME_ORDER.get(x.time_marker, 50), x.event_title))
+        timeline.sort(key=lambda x: (_TIME_ORDER.get(x.time_marker, 50), x.chapter_title, x.event_title))
         return timeline
 
     def infer_causal_chains(
@@ -119,12 +119,12 @@ class TimelineAgent:
             event_text,
         )
 
-        causal_chains = response.get("causal_chains", [])
+        cause_chains = response.get("causal_chains", [])
 
         # Annotate timeline entries with causal predecessors/successors
         cause_map: dict[str, list[str]] = {}
         effect_map: dict[str, list[str]] = {}
-        for chain in causal_chains:
+        for chain in cause_chains:
             cause = chain.get("cause_event", "")
             effect = chain.get("effect_event", "")
             if cause and effect:
@@ -137,7 +137,7 @@ class TimelineAgent:
 
         return TimelineResult(
             entries=timeline,
-            causal_chains=causal_chains,
+            causal_chains=cause_chains,
             inciting_incident=response.get("inciting_incident", ""),
             climax_event=response.get("climax_event", ""),
             resolution_event=response.get("resolution_event", ""),
