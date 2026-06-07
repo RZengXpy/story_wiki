@@ -174,7 +174,7 @@ class GlobalStoryKnowledge:
             location_map[loc].frequency += 1
             location_map[loc].scenes.append(s.title)
             # Infer type from location name
-            indoor_keywords = ["室", "房", "厅", "内", "间", "楼", "家", "屋", "馆", "吧", "店", "舱", "车", "办公室", "会议室", "教室", "医院", "教室"]
+            indoor_keywords = ["室", "房", "厅", "内", "间", "楼", "家", "屋", "馆", "吧", "店", "舱", "车", "办公室", "会议室", "教室", "医院"]
             outdoor_keywords = ["外", "街", "路", "城", "港", "山", "海", "河", "湖", "岛", "镇", "村", "公园", "森林", "沙漠"]
             if any(kw in loc for kw in indoor_keywords):
                 location_map[loc].location_type = "indoor"
@@ -191,8 +191,8 @@ class GlobalStoryKnowledge:
         time_order = {
             "黎明": 0, "凌晨": 0, "清晨": 1, "早晨": 1, "早上": 1, "上午": 2,
             "中午": 3, "午间": 3, "午后": 3,
-            "下午": 4, "傍晚": 5, "黄昏": 5, "傍晚": 5,
-            "晚上": 6, "夜里": 7, "深夜": 8, "午夜": 8, "凌晨": 9,
+            "下午": 4, "傍晚": 5, "黄昏": 5,
+            "晚上": 6, "夜里": 7, "深夜": 8, "午夜": 8,
         }
         self.timeline = []
         for e in self.events:

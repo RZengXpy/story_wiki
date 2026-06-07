@@ -100,6 +100,9 @@ def _build_skl_summary(gsk) -> str:
     """Build a compact text summary of the SKL for the Director Agent prompt."""
     lines = []
 
+    if gsk is None:
+        return "\n".join(lines)
+
     # Title and metadata
     lines.append(f"# {gsk.title or 'Untitled Story'}")
     if gsk.outline:

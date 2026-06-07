@@ -28,7 +28,7 @@ class SceneAgent:
             ))
         return scenes
 
-    def parse_from_chapters(self, chapters: list, llm: LLMClient) -> list[Scene]:
+    def parse_from_chapters(self, chapters: list) -> list[Scene]:
         """Parse scenes chapter-by-chapter, each tagged with source."""
         all_scenes = []
         for ch in chapters:

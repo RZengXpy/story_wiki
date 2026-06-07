@@ -204,8 +204,8 @@ class ConflictResolver:
         unresolved = []
         for conflict in self.detect_all():
             if self._try_auto_resolve(conflict):
-                conflict.resolution = "auto"
                 self._apply_auto_resolution(conflict)
+                conflict.resolution = "auto"
             else:
                 unresolved.append(conflict)
         return unresolved
@@ -369,30 +369,33 @@ class ConflictResolver:
     def _apply_keep_a(self, conflict: KnowledgeConflict) -> None:
         """Keep entity_a, remove entity_b from gsk."""
         name_b = conflict.entity_b.get("name", "")
+        name_a = conflict.entity_a.get("name", "")
         if name_b:
             self.gsk.characters = [c for c in self.gsk.characters if c.name != name_b]
             for rel in self.gsk.relations:
                 if rel.from_char == name_b:
-                    rel.from_char = conflict.entity_a.get("name", "")
+                    rel.from_char = name_a
                 if rel.to_char == name_b:
-                    rel.to_char = conflict.entity_a.get("name", "")
+                    rel.to_char = name_a
+        conflict.resolved_value = conflict.entity_a
         self.audit_trail.record("resolve_conflict", conflict.entity_a.get("type", "unknown"),
-                                conflict.entity_a.get("id", ""), conflict.entity_a, None,
+                                conflict.entity_a.get("id", ""), conflict.entity_a, conflict.entity_b,
                                 reason=f"Keep entity A, discard entity B")
 
     def _apply_keep_b(self, conflict: KnowledgeConflict) -> None:
         """Keep entity_b, remove entity_a from gsk."""
         name_a = conflict.entity_a.get("name", "")
+        name_b = conflict.entity_b.get("name", "")
         if name_a:
             self.gsk.characters = [c for c in self.gsk.characters if c.name != name_a]
-            name_b = conflict.entity_b.get("name", "")
             for rel in self.gsk.relations:
                 if rel.from_char == name_a:
                     rel.from_char = name_b
                 if rel.to_char == name_a:
                     rel.to_char = name_b
+        conflict.resolved_value = conflict.entity_b
         self.audit_trail.record("resolve_conflict", conflict.entity_b.get("type", "unknown"),
-                                conflict.entity_b.get("id", ""), conflict.entity_b, None,
+                                conflict.entity_b.get("id", ""), conflict.entity_b, conflict.entity_a,
                                 reason=f"Keep entity B, discard entity A")
 
     def _apply_merge(self, conflict: KnowledgeConflict) -> None:

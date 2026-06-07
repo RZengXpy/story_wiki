@@ -12,7 +12,6 @@ Features:
 from __future__ import annotations
 
 import sys
-import re
 from pathlib import Path
 from typing import Optional, Any
 
@@ -163,7 +162,6 @@ def _run_workflow_sync(novel_text, title, author, api_key, model, run_check, mod
 
     workflow = StoryForgeWorkflow(
         model=model, api_key=api_key, run_consistency_check=run_check,
-        storage=st.session_state.get("_storage"),
     )
     try:
         if mode == "skl":
