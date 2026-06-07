@@ -32,6 +32,7 @@ class WorkflowResult:
     chapters: list = field(default_factory=list)
     global_skl: Optional[object] = field(default=None)  # GlobalStoryKnowledge
     merger_report: dict = field(default_factory=dict)
+    screenplay_bible: dict = field(default_factory=dict)
 
     def summary(self) -> str:
         if not self.success:

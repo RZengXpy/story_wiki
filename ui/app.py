@@ -1592,7 +1592,7 @@ def _load_story(story_id: str) -> bool:
     chapters_data = storage.load_chapters(story_id)
     local_knowledge_list = storage.load_all_local_knowledge(story_id)
 
-    result = WorkflowResult(success=True, novel_text="")
+    result = WorkflowResult(success=True)
     result.graph = _graph_dict_to_storygraph(graph_data)
     if result.graph:
         result.graph.metadata["title"] = summary.get("title", "")
@@ -1680,6 +1680,7 @@ def _graph_dict_to_storygraph(data: dict) -> "StoryGraph":
             time=s.get("time", ""),
             act=s.get("act", 1),
             characters_present=s.get("characters_present", []),
+            event_ids=s.get("event_ids", []),
             summary=s.get("summary", ""),
         ))
 

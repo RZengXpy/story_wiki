@@ -69,3 +69,21 @@ Identify:
 - key_plot_points: the 3-5 most important plot points in order
 
 Return a JSON object with an "outline" object."""
+
+SCENE_SCREENPLAY_PROMPT = """Convert the scene information below into a properly formatted screenplay.
+
+Requirements:
+- Write vivid, visual action descriptions (what the camera sees, not internal thoughts)
+- Each action line: describe what happens in the scene
+- Each dialogue line: MUST include a "character" field with the speaker's name (capitalized)
+- Capture each character's unique voice in their dialogue
+- Use proper screenplay dialogue formatting
+- Keep action lines concise and visual
+- Action lines should NOT have a "character" field
+- Dialogue lines MUST have both "character" and "text" fields
+
+Return a JSON object with a "script" array, where each item has:
+- "type": either "action" or "dialogue"
+- "text": the content
+- "character": the speaker name (only for dialogue lines, omit for action lines)
+- "parenthetical": optional performance direction (only for dialogue lines)"""
