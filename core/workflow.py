@@ -51,6 +51,9 @@ from core.consistency_checker import ConsistencyChecker
 from core.knowledge_governance import govern_skl, GovernanceReport
 from core.progress import ProgressTracker, Phase
 
+if TYPE_CHECKING:
+    from core.storage import StoryStorage
+
 # Extraction agent
 from agent.unified_extraction_agent import UnifiedExtractionAgent
 
@@ -81,6 +84,7 @@ class WorkflowResult:
     merger_report: dict = field(default_factory=dict)
     governance_report: Optional[GovernanceReport] = field(default=None)
     governance_audit: list = field(default_factory=list)
+    novel_text: str = ""  # raw input, preserved for storage
 
     def summary(self) -> str:
         if not self.success:
@@ -109,10 +113,12 @@ class StoryForgeWorkflow:
         api_key: str,
         run_consistency_check: bool = True,
         use_parallel_extraction: bool = False,
+        storage: Optional["StoryStorage"] = None,
     ):
         self.llm = LLMClient(model=model, api_key=api_key)
         self.run_consistency_check = run_consistency_check
         self.use_parallel_extraction = use_parallel_extraction
+        self.storage = storage
 
         # Extraction agent (single-pass per chapter)
         self.extraction_agent = UnifiedExtractionAgent(self.llm)
@@ -132,6 +138,7 @@ class StoryForgeWorkflow:
         title: str = "",
         author: str = "",
         tracker: Optional[ProgressTracker] = None,
+        _store: bool = True,
     ) -> WorkflowResult:
         """Build SKL from novel text following think.md pipeline.
 
@@ -362,6 +369,7 @@ class StoryForgeWorkflow:
                 success=True,
                 graph=graph,
                 chapters=chapters,
+                novel_text=novel_text,
             )
             result.step_results = {
                 "characters": all_chars,
@@ -378,6 +386,13 @@ class StoryForgeWorkflow:
             if tracker:
                 tracker.set_phase(Phase.DONE)
 
+            # ── Auto-save to storage if configured ──────────────────────
+            if _store and self.storage is not None:
+                try:
+                    self.storage.save_result(result, novel_text)
+                except Exception:
+                    pass
+
             return result
 
         except Exception as e:
@@ -391,13 +406,14 @@ class StoryForgeWorkflow:
         title: str = "",
         author: str = "",
         tracker: Optional[ProgressTracker] = None,
+        _store: bool = True,
     ) -> WorkflowResult:
         """Full pipeline: SKL building + screenplay generation.
 
         Follows think.md Principle VIII (Retrieval Before Generation):
           Relevant Knowledge → Script Generator → Screenplay
         """
-        result = self.run(novel_text, title, author, tracker=tracker)
+        result = self.run(novel_text, title, author, tracker=tracker, _store=False)
         if not result.success:
             return result
 
@@ -464,6 +480,13 @@ class StoryForgeWorkflow:
 
         if tracker:
             tracker.set_phase(Phase.DONE)
+
+        # ── Auto-save to storage if configured ──────────────────────
+        if _store and self.storage is not None:
+            try:
+                self.storage.save_result(result, novel_text)
+            except Exception:
+                pass
 
         return result
 
@@ -661,6 +684,7 @@ class StoryForgeWorkflow:
                 success=True,
                 graph=graph,
                 chapters=chapters,
+                novel_text=novel_text,
             )
             result.step_results = {
                 "characters": all_chars,
@@ -676,6 +700,12 @@ class StoryForgeWorkflow:
 
             if tracker:
                 tracker.set_phase(Phase.DONE)
+
+            if self.storage is not None:
+                try:
+                    self.storage.save_result(result, novel_text)
+                except Exception:
+                    pass
 
             return result
 

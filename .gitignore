@@ -47,9 +47,10 @@ st.md
 think.md
 MIGRATION.md
 对话摘要.md
-
+.env
 # Output
 output/
+data/
 
 # Allow test output (committed to demonstrate pipeline results)
 tests/results/
