@@ -617,6 +617,108 @@ def render_scenes_tab(result: WorkflowResult, graph: StoryGraph):
 # ── Tab: Outline ──────────────────────────────────────────────────────────────
 
 
+def render_screenplay_bible_tab(result: WorkflowResult):
+    """显示 Director Agent 生成的 Screenplay Bible（剧本圣经）.
+
+    包含：genre/tone/visual_style/themes/motifs/character_portraits/dialogue_style/pacing_notes。
+    """
+    if not result or not result.screenplay_bible:
+        st.info("暂无剧本圣经（Director Agent 输出）")
+        return
+
+    bible = result.screenplay_bible
+
+    # 基本信息
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("题材", bible.get("genre", "-"))
+    with c2:
+        st.metric("基调", bible.get("tone", "-"))
+    with c3:
+        st.metric("预估时长", bible.get("target_runtime", "-"))
+
+    st.divider()
+
+    # 视觉风格 & 设定
+    c1, c2 = st.columns(2)
+    with c1:
+        if bible.get("visual_style"):
+            st.markdown("**🎬 视觉风格**")
+            st.text(bible.get("visual_style"))
+        if bible.get("setting_period"):
+            st.markdown("**🌍 时代/地点**")
+            st.text(bible.get("setting_period"))
+        if bible.get("atmosphere") and isinstance(bible.get("atmosphere"), list):
+            st.markdown("**🌫️ 氛围**")
+            for atm in bible.get("atmosphere"):
+                st.text(f"• {atm}")
+    with c2:
+        if bible.get("subgenre"):
+            st.markdown("**📂 亚类型**")
+            st.text(bible.get("subgenre"))
+        if bible.get("rating_approach"):
+            st.markdown("**🔞 评级**")
+            st.text(bible.get("rating_approach"))
+        if bible.get("pacing_notes"):
+            st.markdown("**⏱️ 节奏**")
+            st.text(bible.get("pacing_notes"))
+
+    st.divider()
+
+    # 主题
+    if bible.get("themes"):
+        st.markdown("**🎯 核心主题**")
+        for theme in bible.get("themes", []):
+            if isinstance(theme, str):
+                st.text(f"• {theme}")
+            elif isinstance(theme, dict):
+                st.text(f"• {theme.get('name', '')}: {theme.get('description', '')}")
+
+    # 母题
+    if bible.get("motifs"):
+        st.markdown("**🔁 叙事母题**")
+        for motif in bible.get("motifs", []):
+            st.text(f"• {motif}")
+
+    st.divider()
+
+    # 三幕结构
+    if bible.get("act_breakdown"):
+        st.markdown("**📐 三幕结构**")
+        acts = bible.get("act_breakdown", {})
+        for act_key, act_desc in acts.items():
+            st.markdown(f"**{act_key.upper()}**")
+            st.text(act_desc)
+        st.divider()
+
+    # 角色肖像
+    portraits = bible.get("character_portraits", [])
+    if portraits:
+        st.markdown(f"**👤 角色肖像**（{len(portraits)} 人）")
+        for p in portraits:
+            if not isinstance(p, dict):
+                continue
+            name = p.get("name", "未知")
+            role = p.get("role", "")
+            psychology = p.get("psychology", "")
+            speech = p.get("speech_pattern", "")
+            appearance = p.get("visual_appearance", "")
+            with st.expander(f"{name} [{role}]"):
+                if psychology:
+                    st.text(f"心理：{psychology}")
+                if speech:
+                    st.text(f"语言风格：{speech}")
+                if appearance:
+                    st.text(f"外貌：{appearance}")
+
+    st.divider()
+
+    # 对话风格
+    if bible.get("dialogue_style"):
+        st.markdown("**💬 对话风格指南**")
+        st.text(bible.get("dialogue_style"))
+
+
 def render_outline_tab(result: WorkflowResult):
     if not result or not result.global_skl:
         st.info("暂无大纲数据")
@@ -662,6 +764,36 @@ def render_outline_tab(result: WorkflowResult):
         st.subheader("关键情节点")
         for i, pt in enumerate(key_points, 1):
             st.text(f"{i}. {pt}")
+
+    # ── Per-chapter summaries (from UnifiedExtractionAgent) ───────────────
+    chapter_summaries = getattr(gsk, "chapter_summaries", []) or []
+    chapter_goals = getattr(gsk, "chapter_goals", []) or []
+    chapter_conflicts = getattr(gsk, "chapter_conflicts", []) or []
+
+    if chapter_summaries or chapter_goals or chapter_conflicts:
+        st.divider()
+        st.subheader("每章摘要（Unified Extraction）")
+        n = max(len(chapter_summaries), len(chapter_goals), len(chapter_conflicts))
+        source_chapters = getattr(gsk, "source_chapters", []) or []
+
+        for i in range(n):
+            ch_title = (source_chapters[i].get("chapter_title", f"第{i+1}章")
+                        if i < len(source_chapters) else f"第{i+1}章")
+            summary = chapter_summaries[i] if i < len(chapter_summaries) else ""
+            goal = chapter_goals[i] if i < len(chapter_goals) else ""
+            conflict = chapter_conflicts[i] if i < len(chapter_conflicts) else ""
+
+            if summary or goal or conflict:
+                with st.expander(f"**{ch_title}**", expanded=False):
+                    if summary:
+                        st.markdown("**摘要**")
+                        st.text(summary)
+                    if goal:
+                        st.markdown("**目标**")
+                        st.text(goal)
+                    if conflict:
+                        st.markdown("**冲突**")
+                        st.text(conflict)
 
 
 # ── Tab: Timeline ─────────────────────────────────────────────────────────────
@@ -1177,7 +1309,7 @@ def main():
     # Tab layout
     tabs = [
         "📋 元信息", "👥 角色", "🔗 关系", "🎭 事件",
-        "🎬 场景", "📝 大纲", "⏱️ 时间线", "📍 地点",
+        "🎬 场景", "📝 大纲", "📖 剧本圣经", "⏱️ 时间线", "📍 地点",
         "⚠️ 警告", "🛡️ 治理", "📝 审计",
         "🎬 剧本编辑", "📄 YAML 导出", "📦 中间文档",
     ]
@@ -1197,20 +1329,22 @@ def main():
     with tab_objects[5]:
         render_outline_tab(current_result)
     with tab_objects[6]:
-        render_timeline_tab(current_result)
+        render_screenplay_bible_tab(current_result)
     with tab_objects[7]:
-        render_locations_tab(current_result)
+        render_timeline_tab(current_result)
     with tab_objects[8]:
-        render_warnings_tab(graph)
+        render_locations_tab(current_result)
     with tab_objects[9]:
-        render_governance_tab(current_result)
+        render_warnings_tab(graph)
     with tab_objects[10]:
-        render_audit_tab(current_result)
+        render_governance_tab(current_result)
     with tab_objects[11]:
-        render_screenplay_tab(current_result, graph)
+        render_audit_tab(current_result)
     with tab_objects[12]:
-        render_yaml_tab(current_result, graph)
+        render_screenplay_tab(current_result, graph)
     with tab_objects[13]:
+        render_yaml_tab(current_result, graph)
+    with tab_objects[14]:
         render_pipeline_docs_tab()
 
 
@@ -1349,7 +1483,7 @@ def render_pipeline_docs_tab():
     st.divider()
     st.subheader("🛡️ 治理报告（阶段 6）")
     if current_result and current_result.governance_report:
-        rep = result.governance_report
+        rep = current_result.governance_report
         val_passed = "✅ PASSED" if rep.validation.passed else "❌ FAILED"
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -1425,6 +1559,7 @@ def _load_story(story_id: str) -> bool:
 
     result.merger_report = storage.load_pipeline_log(story_id)
     result.global_skl = _reconstruct_gsk(skl_data, chapters_data)
+    result.screenplay_bible = summary.get("screenplay_bible", {})
     result.governance_report = _reconstruct_governance_report(governance_data) if governance_data else None
     result.chapters = chapters_data
 
@@ -1557,6 +1692,13 @@ def _reconstruct_gsk(skl_data: dict, chapters_data: list) -> object:
     gsk.author = skl_data.get("author", "")
     gsk.outline = skl_data.get("outline", {})
     gsk.character_first_appearance = skl_data.get("character_first_appearance", {})
+
+    # Restore per-chapter summary/goal/conflict lists (for 大纲 Tab)
+    gsk.chapter_summaries = skl_data.get("chapter_summaries", []) or []
+    gsk.chapter_goals = skl_data.get("chapter_goals", []) or []
+    gsk.chapter_conflicts = skl_data.get("chapter_conflicts", []) or []
+    # Restore source_chapters (for chapter title lookup in 大纲 Tab)
+    gsk.source_chapters = skl_data.get("source_chapters", []) or []
 
     # Reconstruct characters
     for c_data in skl_data.get("characters", []):

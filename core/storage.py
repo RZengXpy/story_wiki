@@ -366,6 +366,12 @@ class StoryStorage:
         # Pipeline log
         self.save_pipeline_log(story_id, result.merger_report or {})
 
+        # Screenplay Bible (Director Agent output)
+        if result.screenplay_bible:
+            meta = self._read_json(self.get_story_dir(story_id) / "meta.json")
+            meta["screenplay_bible"] = result.screenplay_bible
+            self._write_json(self.get_story_dir(story_id) / "meta.json", meta)
+
         # Update meta updated_at
         meta_path = self.get_story_dir(story_id) / "meta.json"
         with open(meta_path, encoding="utf-8") as f:
