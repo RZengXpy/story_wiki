@@ -218,113 +218,23 @@ story_graph:
 
 ---
 
-## MVP 7：知识层治理（Knowledge Layer Governance）
-
-### 目标
-
-在 SKL（GlobalStoryKnowledge）构建完成后，对其进行**知识治理**：冲突检测与仲裁、一致性维护、知识修正与回写，确保 SKL 始终是高质量的 Single Source of Truth。
-
-### 核心问题
-
-当前 pipeline 各 Agent 独立提取知识，存在以下隐患：
-
-- **跨 Agent 不一致**：CharacterAgent 提取的"林远"和 SceneAgent 提取的"林远"是同一个角色吗？
-- **冲突未仲裁**：RelationAgent 说"A和B是朋友"，EventAgent 提取的事件却说"A打了B"——谁对？
-- **知识静默错误**：LLM 幻觉导致角色名拼写错误、关系类型错误、事件逻辑矛盾
-- **用户修正无回写**：用户在 UI 中修正了角色名，但 SKL 不会同步更新
-
-### 实现任务
-
-- [x] **AuditTrail**：`AuditEntry` / `AuditTrail`，记录所有 SKL 变更，支持回溯和 rollback
-- [x] **ConflictResolver**：检测 4 类冲突（relation_event_mismatch / character_role_conflict / character_identity_merge），支持 keep_a / keep_b / merge / manual 策略 + 自动仲裁
-- [x] **SKL Validator**：`SKLValidator` 对 GlobalStoryKnowledge 做完整性/一致性校验（必填字段、类型约束、孤儿实体、跨字段约束）
-- [x] **KnowledgePatch**：接收用户修正，回写到 SKL 并级联更新受影响的下游（Scene / Event / Relation）
-- [x] **KnowledgeRevision**：`KnowledgeRevision.auto_correct()` 自动规范化 event_type / relation_type / character_role 拼写错误
-- [x] **KnowledgeGovernor**：`govern_skl()` 便捷函数 + `GovernanceReport` 统一入口
-- [x] **Workflow 集成**：`StoryForgeWorkflow.run()` 在 SKL 构建完成后调用 `govern_skl()`
-- [x] **测试**：`tests/test_knowledge_governance.py` 33 个单元测试
-
-### 知识治理在 pipeline 中的位置
-
-```
-SKL 构建（Local → Global）
-       │
-       ▼
-┌─────────────────┐
-│  知识治理层       │  ← MVP 7
-│  · 冲突仲裁      │
-│  · 一致性校验    │
-│  · 知识修正      │
-│  · 变更回写      │
-└─────────────────┘
-       │
-       ▼
-   StoryGraph
-       │
-       ▼
-   Screenplay（稳定输入）
-```
-
----
-
-## MVP 6：接入 ScriptAgent，SKL → Screenplay
-
-### 做了什么
-
-1. **重构 ScriptAgent** (`agent/script_agent.py`)
-   - 新增 `write_scene()`：以 SKL 上下文逐场景生成剧本内容
-   - 新增 `write_all_scenes()`：批量生成所有场景的剧本
-   - 保留原有 `write_screenplay()` / `analyze_structure()` 向后兼容
-
-2. **SKL 上下文注入**
-   - 场景关联的角色信息（name / description / traits / role）
-   - 场景关联的事件（event_type / title / description）
-   - 场景关联的角色关系（from_char / to_char / relation_type / description）
-   - 故事主线冲突（main_conflict）
-
-3. **新增 Prompt**：`SCENE_SCREENPLAY_PROMPT`，要求生成标准剧本格式（action/dialogue，含 character 字段）
-
-4. **新增方法**：`StoryForgeWorkflow.run_with_scripts()`，完整 pipeline：SKL 构建 → 一致性检查 → 逐场景剧本生成
-
-5. **StoryGraph 扩展**
-   - `to_yaml()` 输出包含 `scripts` 字段
-   - `scripts`: scene_id → ScriptNode（id + content: list[ScriptItem]）
-
-6. **新增测试**：`tests/test_workflow_mvp6.py`，端到端验证剧本生成
-
-### 解决了什么问题
-
-- **剧本生成缺失**：之前 pipeline 只能提取知识，无法生成实际剧本
-- **上下文不足**：场景剧本生成时注入 SKL 上下文，保证角色/事件/关系一致性
-
-### 测试结果（text.md 雾港档案）
-
-```
-SKL: 6 chars, 18 scenes
-Scripts: 18 scene scripts generated
-Screenplay items: ~200+ (action/dialogue)
-Consistency warnings: 6
-```
-
-### 下一步
-
-- MVP 7：Retrieval，Relevant Knowledge → Scene Generation（按需检索替代全量注入）
-
----
-
 ## MVP 7：Retrieval，Relevant Knowledge → Scene Generation
 
 ### 目标
 
-实现"检索增强生成"（RAG），作为作品创新点。按需检索替代全量 SKL 注入，解决上下文爆炸问题。
+实现"检索增强生成"（RAG），作为作品创新点。
 
 ### 实现任务
 
-- [ ] **Knowledge Retriever**：给定目标 scene_id，从 SKL 检索相关知识（同场景角色背景、相关事件、同一角色其他出场、时间线上下文）
-- [ ] **Context Injection**：将检索结果注入 `ScriptAgent` prompt，提升场景生成质量
-- [ ] **Scene Graph Construction**：构建 scene 间的关系图（时序/因果/空间），支撑跨场景检索
-- [ ] **Retrieval Evaluation**：评估检索相关性（人工评测 + 自动指标）
-- [ ] **测试**：`test_retrieval.py` 验证检索准确性和场景生成提升
+- [ ] **Knowledge Retriever** — 给定目标 scene_id，从 SKL 检索相关知识（同场景角色背景、相关事件、同一角色其他出场、时间线上下文）
+- [ ] **Context Injection** — 将检索结果注入 `ScriptAgent` prompt，提升场景生成质量
+- [ ] **Scene Graph Construction** — 构建 scene 间的关系图（时序/因果/空间），支撑跨场景检索
+- [ ] **Retrieval Evaluation** — 评估检索相关性（人工评测 + 自动指标）
+- [ ] **测试** — `test_retrieval.py` 验证检索准确性和场景生成提升
+
+### 创新点说明
+
+当前剧本生成直接传入整篇 SKL，上下文爆炸；MVP 7 实现按需检索，仅注入场景相关知识，实现：更精准的场景描写、角色行为的一致性、事件因果链的连贯性。
 
 ---
 
@@ -334,14 +244,8 @@ Consistency warnings: 6
 |--------|--------|------|
 | `3442238` | feature/mvp3-chapter-parsing | feat(mvp3): chapter parsing + event source tracing |
 | `130f342` | feature/mvp3-chapter-parsing | feat(mvp4): local-to-global knowledge merger + enhanced consistency checker |
-| `5d8159a` | main | feat: 章节感知的多 Agent 小说转剧本 pipeline（MVP 3-5） |
-| `c8b3a39` | main | feat(mvp6): 接入 ScriptAgent，SKL → Screenplay 剧本生成 |
-| `6dc27e1` | main | feat(mvp6): 接入 ScriptAgent，SKL → Screenplay 剧本生成（含 REVIEW_LOG.md 更新） |
-| `3f5d2f7` | feature/mvp1-2 | feat(mvp7): knowledge layer governance — conflict resolution, validation, patching, audit |
 
-PR 链接：
-- MVP 3-5: https://github.com/RZengXpy/story_wiki/pull/3
-- MVP 6: https://github.com/RZengXpy/story_wiki/pull/4
+PR 链接：https://github.com/RZengXpy/story_wiki/pull/new/feature/mvp3-chapter-parsing
 
 ---
 

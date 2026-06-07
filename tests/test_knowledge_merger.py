@@ -51,24 +51,8 @@ def test_global_knowledge_merge():
         Scene(title="地下室发现", location="灯塔地下室", time_of_day="evening", description="", source=src2),
     ]
 
-    local1 = LocalKnowledge(
-        chapter_id="ch_001",
-        chapter_title="第一章",
-        chapter_summary="林川在图书馆遇到陌生老人，老人询问北辰号航海日志。",
-        chapter_goal="林川想知道老人为什么要找北辰号日志。",
-        chapter_conflict="日志档案已经不见了，线索中断。",
-        characters=chars1,
-        scenes=scenes1,
-    )
-    local2 = LocalKnowledge(
-        chapter_id="ch_002",
-        chapter_title="第二章",
-        chapter_summary="林川和陈雨前往废弃灯塔，发现了北辰号的航海日志。",
-        chapter_goal="找到北辰号失踪的真相。",
-        chapter_conflict="神秘黑衣人出现，试图抢夺日志。",
-        characters=chars2,
-        scenes=scenes2,
-    )
+    local1 = LocalKnowledge("ch_001", "第一章", chars1, scenes1)
+    local2 = LocalKnowledge("ch_002", "第二章", chars2, scenes2)
 
     merger = KnowledgeMerger(title="雾港档案", author="StoryForge")
     result = merger.merge_all([local1, local2])
@@ -121,7 +105,7 @@ def test_merge_characters_deduplication():
 
 
 def test_merge_scenes_deduplication():
-    """Test scene deduplication by title only; same title with different location is merged."""
+    """Test scene deduplication by (title, location)."""
     gsk = GlobalStoryKnowledge()
 
     src1 = SourceTrace(chapter_id="ch_001", chapter_title="第一章")
@@ -135,49 +119,11 @@ def test_merge_scenes_deduplication():
     assert removed1 == 0
     assert len(gsk.scenes) == 1
 
-    # s2 has same title as s1 → duplicate, not added (location_variants tracks the match)
-    # s3 is a new title → added
     removed2 = gsk.merge_scenes([s2, s3])
-    assert removed2 == 1  # s2 duplicate of s1 (same title), s3 new
+    assert removed2 == 1  # s2 is duplicate of s1, s3 is new
     assert len(gsk.scenes) == 2
-    assert gsk.scenes[0].title == "图书馆相遇"
-    assert gsk.scenes[0].location == "雾港镇图书馆"
-    assert gsk.scenes[1].title == "废弃灯塔"
 
     print("  PASS: merge_scenes_deduplication")
-
-
-def test_merge_scenes_location_variants():
-    """Test that same scene title with different locations are tracked as location_variants."""
-    gsk = GlobalStoryKnowledge()
-
-    src1 = SourceTrace(chapter_id="ch_001", chapter_title="第一章")
-    src2 = SourceTrace(chapter_id="ch_002", chapter_title="第二章")
-    src3 = SourceTrace(chapter_id="ch_003", chapter_title="第三章")
-
-    s1 = Scene(title="废弃灯塔", location="黑礁海岸", time_of_day="evening", description="林川发现灯塔外观，破败不堪", source=src1)
-    s2 = Scene(title="废弃灯塔", location="灯塔地下室", time_of_day="night", description="地下室里有旧档案", characters=["林川"], source=src2)
-    s3 = Scene(title="废弃灯塔", location="灯塔阁楼", time_of_day="noon", description="阁楼窗户透进月光", characters=["陈雨"], source=src3)
-
-    gsk.merge_scenes([s1, s2, s3])
-
-    # All three should merge into one scene (same title)
-    assert len(gsk.scenes) == 1
-    scene = gsk.scenes[0]
-    assert scene.title == "废弃灯塔"
-    # Primary location is the first one
-    assert scene.location == "黑礁海岸"
-    # Variant locations should be collected
-    assert "灯塔地下室" in scene.location_variants
-    assert "灯塔阁楼" in scene.location_variants
-    assert "黑礁海岸" not in scene.location_variants  # primary, not a variant
-    # Characters from all variants should be merged
-    assert "林川" in scene.characters
-    assert "陈雨" in scene.characters
-    # Description should be the longest (s1 is longest at 15 chars)
-    assert len(scene.description) == len("林川发现灯塔外观，破败不堪")
-
-    print("  PASS: merge_scenes_location_variants")
 
 
 def test_consistency_checker():

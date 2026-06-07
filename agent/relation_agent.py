@@ -29,14 +29,12 @@ class RelationAgent:
         """Extract relations from each chapter, attaching source trace."""
         all_relations = []
         for ch in chapters:
-            if not hasattr(ch, "content") or not ch.content.strip():
-                continue
             relations = self.extract_relations(ch.content)
             for r in relations:
                 r.source = SourceTrace(
                     chapter_id=ch.id,
                     chapter_title=ch.title,
-                    char_range=(ch.start_char, ch.end_char),
+                    char_range=(0, 0),
                 )
             all_relations.extend(relations)
         return all_relations
