@@ -425,6 +425,9 @@ def render_metadata_tab(graph: StoryGraph):
 
 
 def render_characters_tab(result: WorkflowResult, graph: StoryGraph, gsk):
+    if not graph:
+        st.info("暂无角色数据")
+        return
     if not graph.characters:
         st.info("暂无角色数据")
         return
@@ -490,6 +493,9 @@ def render_characters_tab(result: WorkflowResult, graph: StoryGraph, gsk):
 
 
 def render_relations_tab(result: WorkflowResult, graph: StoryGraph):
+    if not graph:
+        st.info("暂无关系数据")
+        return
     if not graph.relations:
         st.info("暂无关系数据")
         return
@@ -528,6 +534,9 @@ def render_relations_tab(result: WorkflowResult, graph: StoryGraph):
 
 
 def render_events_tab(result: WorkflowResult, graph: StoryGraph):
+    if not graph:
+        st.info("暂无事件数据")
+        return
     if not graph.events:
         st.info("暂无事件数据")
         return
@@ -587,6 +596,9 @@ def render_events_tab(result: WorkflowResult, graph: StoryGraph):
 
 
 def render_scenes_tab(result: WorkflowResult, graph: StoryGraph):
+    if not graph:
+        st.info("暂无场景数据")
+        return
     if not graph.scenes:
         st.info("暂无场景数据")
         return
@@ -1085,6 +1097,10 @@ def render_screenplay_tab(result: WorkflowResult, graph: StoryGraph):
         st.info("请先生成剧本")
         return
 
+    if not graph:
+        st.info("暂无剧本数据")
+        return
+
     gsk = result.global_skl
     scripts = graph.scripts
 
@@ -1186,6 +1202,10 @@ def render_screenplay_tab(result: WorkflowResult, graph: StoryGraph):
 
 def render_yaml_tab(result: WorkflowResult, graph: StoryGraph):
     st.subheader("📄 YAML 导出与预览")
+
+    if not graph:
+        st.info("暂无 YAML 数据")
+        return
 
     # Live YAML preview
     yaml_output = graph.to_yaml()
