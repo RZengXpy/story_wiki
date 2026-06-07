@@ -58,6 +58,17 @@ def init_session_state():
         if key not in st.session_state:
             st.session_state[key] = val
 
+    # Auto-recover: if no result in session, try to load the most recent story from storage
+    if st.session_state.get("workflow_result") is None:
+        storage = st.session_state.get("_storage")
+        if storage:
+            stories = storage.list_stories()
+            if stories:
+                latest = stories[0]
+                sid = latest.get("story_id", "")
+                if sid:
+                    _load_story(sid)
+
 
 # ── Progress Phase Icons ────────────────────────────────────────────────────────
 
