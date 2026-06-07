@@ -7,12 +7,14 @@ Features:
 - Consistency checking (4 types of warnings)
 - SKL → Screenplay generation (scene-by-scene, SKL-context-injected)
 - Inline screenplay editing with live YAML preview and export
+- Real-time progress tracking during workflow execution
 """
 from __future__ import annotations
 
 import sys
 import re
 from pathlib import Path
+from typing import Optional
 
 _root = Path(__file__).resolve().parents[1]
 if str(_root) not in sys.path:
@@ -28,6 +30,7 @@ from core.knowledge_governance import (
     Patch, KnowledgeGovernor, GovernanceReport,
     AuditEntry, AuditTrail,
 )
+from core.progress import ProgressTracker, Phase
 
 
 # ── Session State ──────────────────────────────────────────────────────────────
@@ -39,12 +42,126 @@ def init_session_state():
         "governance_report": None,
         "current_tab": 0,
         "yaml_output": "",
-        "edited_scripts": {},          # scene_id -> list of edited ScriptItem dicts
+        "edited_scripts": {},
         "show_scripts_generated": False,
+        "workflow_running": False,
+        "workflow_mode": None,
+        "workflow_error": None,
+        "_progress_tracker": None,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = val
+
+
+# ── Progress Phase Icons ────────────────────────────────────────────────────────
+
+
+_PHASE_ICONS = {
+    Phase.PARSING_CHAPTERS: "📖",
+    Phase.EXTRACTING_KNOWLEDGE: "🔍",
+    Phase.MERGING_KNOWLEDGE: "🔗",
+    Phase.GOVERNANCE: "🛡️",
+    Phase.CHECKING_CONSISTENCY: "✅",
+    Phase.BUILDING_GRAPH: "🗺️",
+    Phase.GENERATING_SCRIPTS: "🎬",
+    Phase.DONE: "🎉",
+    Phase.ERROR: "❌",
+}
+
+
+# ── Workflow Execution ─────────────────────────────────────────────────────────
+
+
+def _render_live_progress():
+    """Render live progress bar and status while workflow is running.
+
+    Drains the result queue on the main thread and updates session state.
+    """
+    import queue
+
+    tracker = st.session_state.get("_progress_tracker")
+    if tracker is None:
+        st.info("准备开始...")
+        return
+
+    result_queue = st.session_state.get("_result_queue")
+    if result_queue is not None:
+        try:
+            while True:
+                msg_type, payload = result_queue.get_nowait()
+                if msg_type == "result":
+                    st.session_state["workflow_result"] = payload
+                    st.session_state["show_scripts_generated"] = (
+                        st.session_state.get("workflow_mode") == "scripts"
+                    )
+                    st.session_state["workflow_running"] = False
+                elif msg_type == "error":
+                    st.session_state["workflow_error"] = payload
+                    st.session_state["workflow_running"] = False
+        except queue.Empty:
+            pass
+
+    p = tracker.get_progress()
+    icon = _PHASE_ICONS.get(p.phase, "⏳")
+    fraction = min(p.current / max(p.total, 1), 1.0) if p.total > 0 else 0.0
+
+    st.progress(fraction, text=p.message)
+
+    parts = [f"{icon} **{p.phase_label}**", p.message]
+    if p.chapter_info:
+        parts.append(f"📍 {p.chapter_info}")
+    llm_done, llm_total = tracker.get_llm_progress()
+    if llm_total > 0:
+        parts.append(f"🔮 LLM: {llm_done}/{llm_total}")
+    if p.phase == Phase.GENERATING_SCRIPTS:
+        parts.append(f"🎬 场景: {p.current}/{p.total}")
+    st.info("  |  ".join(parts))
+
+    if p.phase == Phase.DONE:
+        st.success("处理完成！")
+        st.session_state["workflow_running"] = False
+    elif p.phase == Phase.ERROR:
+        st.error(f"出错：{p.message}")
+        st.session_state["workflow_running"] = False
+
+
+def _run_workflow_sync(novel_text, title, author, api_key, model, run_check, mode: str):
+    """Run workflow synchronously in the main thread.
+
+    Workflow runs here on the main thread so there are no cross-thread
+    session_state issues.  While it runs, the caller sets up a progress bar
+    and the main loop polls tracker.get_progress() each rerun cycle.
+    """
+    import queue
+
+    tracker = ProgressTracker()
+    result_queue: queue.Queue = queue.Queue()
+
+    st.session_state["_progress_tracker"] = tracker
+    st.session_state["_result_queue"] = result_queue
+    st.session_state["workflow_running"] = True
+    st.session_state["workflow_mode"] = mode
+    st.session_state["workflow_error"] = None
+    st.session_state["workflow_result"] = None
+
+    workflow = StoryForgeWorkflow(
+        model=model, api_key=api_key, run_consistency_check=run_check,
+    )
+    try:
+        if mode == "skl":
+            result = workflow.run(
+                novel_text, title=title or "未命名", author=author, tracker=tracker,
+            )
+        else:
+            result = workflow.run_with_scripts(
+                novel_text, title=title or "未命名", author=author, tracker=tracker,
+            )
+        tracker.set_phase(Phase.DONE)
+        result_queue.put(("result", result))
+    except Exception as e:
+        tracker.on_error(str(e))
+        result_queue.put(("error", str(e)))
 
 
 # ── Header & Sidebar ───────────────────────────────────────────────────────────
@@ -147,7 +264,11 @@ def render_upload_section():
 
 
 def render_workflow_buttons(novel_text, title, author, api_key, model, run_check):
-    """Render SKL build and screenplay generation buttons."""
+    """Render SKL build and screenplay generation buttons.
+
+    Uses synchronous execution (no background threads) to avoid all
+    session_state cross-thread issues.  A spinner shows while running.
+    """
     col1, col2 = st.columns(2)
 
     with col1:
@@ -156,56 +277,52 @@ def render_workflow_buttons(novel_text, title, author, api_key, model, run_check
             type="primary",
             use_container_width=True,
             help="提取角色/场景/事件/关系，构建全局知识层",
+            disabled=st.session_state.get("workflow_running", False),
         )
     with col2:
         btn_scripts = st.button(
             "🎬 生成剧本（含 SKL）",
             use_container_width=True,
             help="构建知识图谱 + 逐场景生成剧本（需要更多 API 调用）",
+            disabled=st.session_state.get("workflow_running", False),
         )
-
-    result = None
-    workflow = None
 
     if not novel_text:
         st.info("请先输入小说文本")
-        return None, None
+        return
     if not api_key:
         st.error("请输入 API Key")
-        return None, None
+        return
 
     if btn_build:
-        with st.spinner("正在提取知识，请稍候..."):
-            try:
-                workflow = StoryForgeWorkflow(
-                    model=model,
-                    api_key=api_key,
-                    run_consistency_check=run_check,
-                )
-                result = workflow.run(novel_text, title=title or "未命名", author=author)
-            except Exception as e:
-                st.error(f"执行失败：{e}")
-        st.rerun()
-        return result, workflow
+        mode = "skl"
+        label = "正在构建知识图谱"
+    elif btn_scripts:
+        mode = "scripts"
+        label = "正在生成剧本（耗时较长）"
+    else:
+        return
 
-    if btn_scripts:
-        with st.spinner("正在构建知识图谱 + 生成剧本，请稍候（耗时较长）..."):
-            try:
-                workflow = StoryForgeWorkflow(
-                    model=model,
-                    api_key=api_key,
-                    run_consistency_check=run_check,
-                )
-                result = workflow.run_with_scripts(
-                    novel_text, title=title or "未命名", author=author
-                )
-                st.session_state["show_scripts_generated"] = True
-            except Exception as e:
-                st.error(f"执行失败：{e}")
-        st.rerun()
-        return result, workflow
+    with st.spinner(f"**{label}**，请稍候..."):
+        _run_workflow_sync(novel_text, title, author, api_key, model, run_check, mode)
 
-    return None, None
+    # Drain queue to populate session state
+    import queue
+    result_queue = st.session_state.get("_result_queue")
+    if result_queue is not None:
+        try:
+            while True:
+                msg_type, payload = result_queue.get_nowait()
+                if msg_type == "result":
+                    st.session_state["workflow_result"] = payload
+                    st.session_state["show_scripts_generated"] = (mode == "scripts")
+                elif msg_type == "error":
+                    st.session_state["workflow_error"] = payload
+                    st.error(f"执行出错：{payload}")
+        except queue.Empty:
+            pass
+
+    st.rerun()
 
 
 # ── Result Summary ────────────────────────────────────────────────────────────
@@ -992,12 +1109,9 @@ def main():
         st.session_state["graph_imported"] = graph
         st.info("YAML 已导入，可在「YAML 导出」标签页中查看和继续编辑")
 
-    result, workflow = render_workflow_buttons(
+    render_workflow_buttons(
         novel_text, title, author, api_key, model, run_check,
     )
-
-    if result is not None:
-        st.session_state["workflow_result"] = result
 
     # Render results
     current_result = st.session_state.get("workflow_result")

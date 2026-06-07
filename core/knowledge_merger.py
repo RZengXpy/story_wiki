@@ -354,9 +354,9 @@ def merge_chapters_to_skl(
             chapter_relations["unknown"].append(r)
 
     for e in all_events:
-        src = e.source if isinstance(e.source, dict) else {}
-        cid = src.get("chapter_id", "unknown") if isinstance(src, dict) else "unknown"
         e_dict = e if isinstance(e, dict) else e.__dict__
+        src = e_dict.get("source", {}) if isinstance(e_dict, dict) else {}
+        cid = src.get("chapter_id", "unknown") if isinstance(src, dict) else "unknown"
         chapter_events[cid].append(e_dict)
 
     all_chapter_ids = {getattr(ch, "id", f"ch_{i+1:03d}"): getattr(ch, "title", "未知")
