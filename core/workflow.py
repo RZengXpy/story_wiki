@@ -253,7 +253,7 @@ class StoryForgeWorkflow:
             graph = StoryGraph(metadata={
                 "title": title,
                 "author": author,
-                "genre": outline.get("genre", "thriller"),
+                "genre": gsk.outline.get("genre", "thriller"),
                 "created_at": datetime.now().isoformat(),
                 "adapted_by": "StoryForge",
                 **self._build_merger_report(gsk),
@@ -569,7 +569,7 @@ class StoryForgeWorkflow:
             graph = StoryGraph(metadata={
                 "title": title,
                 "author": author,
-                "genre": outline.get("genre", "thriller"),
+                "genre": gsk.outline.get("genre", "thriller"),
                 "created_at": datetime.now().isoformat(),
                 "adapted_by": "StoryForge",
                 **self._build_merger_report(gsk),
