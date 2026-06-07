@@ -368,6 +368,9 @@ def render_summary(result: WorkflowResult):
     if not result or not result.success:
         return
     graph = result.graph
+    if not graph:
+        st.warning("⚠️ 知识图谱未生成，请检查流程是否正常完成")
+        return
     gsk = result.global_skl
     scripts_count = len(graph.scripts) if graph.scripts else 0
     total_items = sum(len(s.content) for s in graph.scripts.values()) if graph.scripts else 0
