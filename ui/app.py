@@ -210,8 +210,16 @@ def render_sidebar():
                 title = s.get("title") or "未命名"
                 created = s.get("created_at", "")[:10]
                 stats = s.get("stats", {})
-                n_chars = stats.get("characters", "-")
-                n_scenes = stats.get("scenes", "-")
+                if not stats:
+                    # Backward compat: stats field was added later, fall back to pipeline_log
+                    log = storage.load_pipeline_log(sid) if storage else {}
+                    log_stats = log.get("log", {})
+                    stats = {
+                        "characters": log_stats.get("unique_characters", 0),
+                        "scenes": log_stats.get("unique_scenes", 0),
+                    }
+                n_chars = stats.get("characters", "-") or "-"
+                n_scenes = stats.get("scenes", "-") or "-"
                 label = f"{title}  ({created})"
                 if st.button(label, use_container_width=True, key=f"story_{sid[:8]}"):
                     _load_story(sid)
