@@ -13,7 +13,7 @@ from schema.models import Character, Scene, Relation, SourceTrace
 from agent.location_agent import LocationInfo as _RichLocationInfo
 from agent.timeline_agent import TimelineEntry as _RichTimelineEntry
 
-# Use rich types in GS K field annotations (resolved at type-check time)
+# Use rich types in GSK field annotations (resolved at type-check time)
 _location_type = _RichLocationInfo
 _timeline_type = _RichTimelineEntry
 
@@ -151,7 +151,23 @@ class GlobalStoryKnowledge:
                 removed += 1
         return removed
 
-    # ── Event helpers ────────────────────────────────────────────────────
+    # ── Relation helpers ─────────────────────────────────────────────────
+
+    def merge_relations(self, incoming: list[Relation]) -> int:
+        """Merge relations, deduplicating by (from_char, to_char, relation_type)."""
+        removed = 0
+        for r in incoming:
+            seen = any(
+                existing.from_char == r.from_char
+                and existing.to_char == r.to_char
+                and existing.relation_type == r.relation_type
+                for existing in self.relations
+            )
+            if not seen:
+                self.relations.append(r)
+            else:
+                removed += 1
+        return removed
 
     def merge_events(self, incoming: list) -> int:
         """Merge events, deduplicating by title. Returns count of duplicates removed."""
@@ -394,6 +410,7 @@ def merge_chapters_to_skl(
     result.outline = outline
 
     # ── MVP 2: Rich agents for locations & timeline ──────────────────────────
+    # If external agents are provided, use them (override internal rule-based build)
     if location_agent is not None:
         result.locations = location_agent.build_locations(result.scenes)
     if timeline_agent is not None:
