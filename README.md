@@ -378,11 +378,6 @@ story_graph:
 
 ## Demo 视频
 
-请将 demo 视频上传至 bilibili / 云盘等外部平台，然后将链接填入下方：
-
-[![StoryForge Demo 视频]](YOUR_DEMO_VIDEO_URL_HERE)
-
-> 上传后将 `YOUR_DEMO_VIDEO_URL_HERE` 替换为实际的视频链接地址。
 
 ---
 
